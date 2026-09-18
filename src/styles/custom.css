@@ -1,0 +1,41 @@
+:root {
+	--sl-color-accent-low: hsl(194, 65%, 20%);
+	--sl-color-accent: hsl(190, 85%, 42%);
+	--sl-color-accent-high: hsl(187, 90%, 32%);
+	--sl-content-width: 56rem;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: hsl(190, 60%, 92%);
+	--sl-color-accent: hsl(190, 80%, 34%);
+	--sl-color-accent-high: hsl(192, 80%, 25%);
+}
+
+.sl-markdown-content {
+	font-size: 1rem;
+	line-height: 1.7;
+}
+
+.sl-markdown-content p,
+.sl-markdown-content li {
+	max-width: 75ch;
+}
+
+.sl-markdown-content table {
+	display: block;
+	overflow-x: auto;
+	max-width: 100%;
+	white-space: normal;
+}
+
+.sl-markdown-content th,
+.sl-markdown-content td {
+	min-width: 12rem;
+	vertical-align: top;
+	line-height: 1.5;
+}
+
+.sl-markdown-content img {
+	max-width: 100%;
+	height: auto;
+}

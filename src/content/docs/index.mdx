@@ -1,0 +1,57 @@
+---
+title: Overview
+description: 'Assessment summary and project documentation.'
+---
+
+import AssessmentFlow from '../../components/AssessmentFlow.astro';
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+# Compression project
+
+Reference site for the official Canvas specification and the authored compression API proposal.
+
+<Aside type="caution" title="Authority">
+The Canvas pages are the source of truth for requirements, dates, and marking decisions. The pages under **Project docs (authored)** are design notes and proposals.
+</Aside>
+
+## Documents
+
+<CardGrid>
+	<Card title="Description" icon="open-book" href="/assessment/description/">
+		Official project brief, checkpoints, requirements, and examples.
+	</Card>
+	<Card title="Submission & report" icon="document" href="/assessment/submission-report/">
+		Official submission rules, page limits, deliverables, and rubric.
+	</Card>
+	<Card title="API proposal" icon="laptop" href="/assessment/compression-api-proposal/">
+		Authored technical proposal for a separate Terra compression API repository.
+	</Card>
+</CardGrid>
+
+## Assessment snapshot
+
+- Due **1 November by 23:59**.
+- Submit source files through Ed and one PDF report through Canvas.
+- The report is limited to **10 pages**, plus one cover page, one table of contents, and appendices.
+- The code and report each contribute 15 marks, for 30 marks total.
+
+<AssessmentFlow
+	title="Project lifecycle"
+	steps={[
+		{ label: 'Problem requirement', detail: 'Find a real-world customer need involving compression and/or encryption.' },
+		{ label: 'Problem analysis', detail: 'Identify inputs, outputs, resources, functions, and intended features.' },
+		{ label: 'Solution design', detail: 'Choose algorithms, program structure, libraries, and interface behaviour.' },
+		{ label: 'Implement and test', detail: 'Implement incrementally, test each function, debug, integrate, and complete the report.' },
+	]}
+/>
+
+<AssessmentFlow
+	title="Expected project checkpoints"
+	steps={[
+		{ label: 'Week 08', detail: 'Discuss the project description, select a problem, and outline functions and the report.' },
+		{ label: 'Week 09', detail: 'Submit the report outline and source prototypes for Checkpoint 1.' },
+		{ label: 'Week 10', detail: 'Implement functions, debug, integrate, and adjust the design.' },
+		{ label: 'Week 11', detail: 'Demonstrate a running program and document bugs for Checkpoint 2.' },
+		{ label: 'Week 12', detail: 'Demonstrate the complete program and finalise the report for Checkpoint 3.' },
+	]}
+/>

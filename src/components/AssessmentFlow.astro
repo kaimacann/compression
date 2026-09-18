@@ -1,0 +1,107 @@
+---
+export interface FlowStep {
+	label: string;
+	detail: string;
+	meta?: string;
+}
+
+interface Props {
+	title: string;
+	steps: FlowStep[];
+}
+
+const { title, steps } = Astro.props;
+const headingId = `flow-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+---
+
+<section class="assessment-flow" aria-labelledby={headingId}>
+	<h2 id={headingId}>{title}</h2>
+	<ol class="assessment-flow__list">
+		{steps.map((step, index) => (
+			<li class="assessment-flow__step">
+				<div class="assessment-flow__index" aria-hidden="true">{index + 1}</div>
+				<div class="assessment-flow__body">
+					<strong>{step.label}</strong>
+					{step.meta && <span class="assessment-flow__meta">{step.meta}</span>}
+					<p>{step.detail}</p>
+				</div>
+			</li>
+		))}
+	</ol>
+</section>
+
+<style>
+	.assessment-flow {
+		margin: 2.5rem 0;
+		padding: 1.25rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.75rem;
+		background: linear-gradient(135deg, color-mix(in srgb, var(--sl-color-accent-low) 45%, transparent), transparent 70%);
+	}
+
+	.assessment-flow h2 {
+		margin: 0 0 1.25rem;
+		font-size: 1.25rem;
+	}
+
+	.assessment-flow__list {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: 0.75rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.assessment-flow__step {
+		position: relative;
+		display: flex;
+		gap: 0.75rem;
+		min-height: 8.5rem;
+		padding: 1rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.6rem;
+		background: var(--sl-color-bg);
+	}
+
+	.assessment-flow__index {
+		flex: 0 0 auto;
+		display: grid;
+		place-items: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: 999px;
+		background: var(--sl-color-accent-high);
+		color: var(--sl-color-text-invert);
+		font-size: 0.875rem;
+		font-weight: 700;
+	}
+
+	.assessment-flow__body strong {
+		display: block;
+		font-size: 1rem;
+	}
+
+	.assessment-flow__meta {
+		display: block;
+		margin-top: 0.2rem;
+		color: var(--sl-color-gray-2);
+		font-size: 0.875rem;
+	}
+
+	.assessment-flow__body p {
+		margin: 0.65rem 0 0;
+		font-size: 0.95rem;
+		line-height: 1.55;
+	}
+
+	@media (max-width: 40rem) {
+		.assessment-flow__list {
+			grid-template-columns: 1fr;
+		}
+
+		.assessment-flow__step {
+			min-height: 0;
+		}
+	}
+</style>

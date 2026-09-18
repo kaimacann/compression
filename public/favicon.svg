@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Compression Project Assessment</title>
+  <rect width="128" height="128" rx="28" fill="#102a43"/>
+  <path d="M28 34h72v16H60v14h32v14H60v16H44V50H28z" fill="#8ed1d4"/>
+  <path d="M28 34h16v16H28zM60 64h16v14H60zM44 94h16v16H44z" fill="#f3b545"/>
+</svg>

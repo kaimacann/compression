@@ -53,3 +53,8 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Node and Astro build output
+node_modules/
+dist/
+.astro/
