@@ -1,0 +1,105 @@
+---
+export type AssessmentStage =
+	| 'requirement'
+	| 'analysis'
+	| 'design'
+	| 'implementation'
+	| 'checkpoint'
+	| 'submission';
+
+interface Props {
+	stage: AssessmentStage;
+	label?: string;
+}
+
+const labels: Record<AssessmentStage, string> = {
+	requirement: 'Requirement',
+	analysis: 'Analysis',
+	design: 'Design',
+	implementation: 'Implementation and test',
+	checkpoint: 'Checkpoint',
+	submission: 'Submission',
+};
+
+const { stage, label = labels[stage] } = Astro.props;
+---
+
+<span class={`assessment-badge assessment-badge--${stage}`} data-stage={stage}>
+	{label}
+</span>
+
+<style>
+	.assessment-badge {
+		display: inline-flex;
+		align-items: center;
+		width: fit-content;
+		padding: 0.2rem 0.55rem;
+		border: 1px solid currentColor;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		line-height: 1.3;
+		white-space: nowrap;
+	}
+
+	.assessment-badge--requirement {
+		color: #9a3412;
+		background: #ffedd5;
+	}
+
+	.assessment-badge--analysis {
+		color: #1d4ed8;
+		background: #dbeafe;
+	}
+
+	.assessment-badge--design {
+		color: #6d28d9;
+		background: #ede9fe;
+	}
+
+	.assessment-badge--implementation {
+		color: #047857;
+		background: #d1fae5;
+	}
+
+	.assessment-badge--checkpoint {
+		color: #a16207;
+		background: #fef3c7;
+	}
+
+	.assessment-badge--submission {
+		color: #be123c;
+		background: #ffe4e6;
+	}
+
+	:global(:root[data-theme='dark']) .assessment-badge--requirement {
+		color: #fdba74;
+		background: #431407;
+	}
+
+	:global(:root[data-theme='dark']) .assessment-badge--analysis {
+		color: #93c5fd;
+		background: #172554;
+	}
+
+	:global(:root[data-theme='dark']) .assessment-badge--design {
+		color: #c4b5fd;
+		background: #2e1065;
+	}
+
+	:global(:root[data-theme='dark']) .assessment-badge--implementation {
+		color: #6ee7b7;
+		background: #022c22;
+	}
+
+	:global(:root[data-theme='dark']) .assessment-badge--checkpoint {
+		color: #fcd34d;
+		background: #422006;
+	}
+
+	:global(:root[data-theme='dark']) .assessment-badge--submission {
+		color: #fda4af;
+		background: #4c0519;
+	}
+</style>

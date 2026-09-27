@@ -1,41 +1,110 @@
 :root {
-	--sl-color-accent-low: hsl(194, 65%, 20%);
-	--sl-color-accent: hsl(190, 85%, 42%);
-	--sl-color-accent-high: hsl(187, 90%, 32%);
-	--sl-content-width: 56rem;
+  --sl-color-accent-low: hsl(194, 65%, 20%);
+  --sl-color-accent: hsl(190, 85%, 42%);
+  --sl-color-accent-high: hsl(187, 90%, 32%);
+  --sl-content-width: 56rem;
 }
 
-:root[data-theme='light'] {
-	--sl-color-accent-low: hsl(190, 60%, 92%);
-	--sl-color-accent: hsl(190, 80%, 34%);
-	--sl-color-accent-high: hsl(192, 80%, 25%);
+:root[data-theme="light"] {
+  --sl-color-accent-low: hsl(190, 60%, 92%);
+  --sl-color-accent: hsl(190, 80%, 34%);
+  --sl-color-accent-high: hsl(192, 80%, 25%);
 }
 
 .sl-markdown-content {
-	font-size: 1rem;
-	line-height: 1.7;
+  font-size: 1rem;
+  line-height: 1.7;
+  overflow-x: auto;
 }
 
 .sl-markdown-content p,
 .sl-markdown-content li {
-	max-width: 75ch;
+  max-width: 75ch;
 }
 
 .sl-markdown-content table {
-	display: block;
-	overflow-x: auto;
-	max-width: 100%;
-	white-space: normal;
+  display: table;
+  overflow: visible;
+  width: 100%;
+  min-width: 32rem;
+  table-layout: fixed;
+  margin: 0;
 }
 
-.sl-markdown-content th,
-.sl-markdown-content td {
-	min-width: 12rem;
-	vertical-align: top;
-	line-height: 1.5;
+.sl-markdown-content table:has(th:nth-child(3)):not(:has(th:nth-child(4))) {
+  min-width: 48rem;
+}
+
+.sl-markdown-content table:has(th:nth-child(4)) {
+  min-width: 56rem;
+}
+
+.sl-markdown-content table th,
+.sl-markdown-content table td {
+  vertical-align: top;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sl-markdown-content table:not(:has(th:nth-child(3))) th:first-child,
+.sl-markdown-content table:not(:has(th:nth-child(3))) td:first-child {
+  width: 30%;
+}
+
+.sl-markdown-content table:not(:has(th:nth-child(3))) th:nth-child(2),
+.sl-markdown-content table:not(:has(th:nth-child(3))) td:nth-child(2) {
+  width: 70%;
+}
+
+.sl-markdown-content
+  table:has(th:nth-child(3)):not(:has(th:nth-child(4)))
+  th:first-child,
+.sl-markdown-content
+  table:has(th:nth-child(3)):not(:has(th:nth-child(4)))
+  td:first-child {
+  width: 22%;
+}
+
+.sl-markdown-content
+  table:has(th:nth-child(3)):not(:has(th:nth-child(4)))
+  th:nth-child(2),
+.sl-markdown-content
+  table:has(th:nth-child(3)):not(:has(th:nth-child(4)))
+  td:nth-child(2) {
+  width: 36%;
+}
+
+.sl-markdown-content
+  table:has(th:nth-child(3)):not(:has(th:nth-child(4)))
+  th:nth-child(3),
+.sl-markdown-content
+  table:has(th:nth-child(3)):not(:has(th:nth-child(4)))
+  td:nth-child(3) {
+  width: 42%;
+}
+
+.sl-markdown-content table:has(th:nth-child(4)) th:first-child,
+.sl-markdown-content table:has(th:nth-child(4)) td:first-child {
+  width: 18%;
+}
+
+.sl-markdown-content table:has(th:nth-child(4)) th:nth-child(2),
+.sl-markdown-content table:has(th:nth-child(4)) td:nth-child(2) {
+  width: 27%;
+}
+
+.sl-markdown-content table:has(th:nth-child(4)) th:nth-child(3),
+.sl-markdown-content table:has(th:nth-child(4)) td:nth-child(3) {
+  width: 27%;
+}
+
+.sl-markdown-content table:has(th:nth-child(4)) th:nth-child(4),
+.sl-markdown-content table:has(th:nth-child(4)) td:nth-child(4) {
+  width: 28%;
 }
 
 .sl-markdown-content img {
-	max-width: 100%;
-	height: auto;
+  max-width: 100%;
+  height: auto;
 }

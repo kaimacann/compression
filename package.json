@@ -7,11 +7,16 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "format:markdown": "prettier --write README.md 'src/**/*.md' 'src/**/*.mdx'",
+    "check:markdown": "prettier --check README.md 'src/**/*.md' 'src/**/*.mdx'",
     "astro": "astro"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.1",
     "astro": "^7.2.10",
     "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.8"
   }
 }

@@ -1,8 +1,11 @@
 ---
+import AssessmentBadge, { type AssessmentStage } from './AssessmentBadge.astro';
+
 export interface FlowStep {
 	label: string;
 	detail: string;
 	meta?: string;
+	stage?: AssessmentStage;
 }
 
 interface Props {
@@ -21,7 +24,7 @@ const headingId = `flow-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 			<li class="assessment-flow__step">
 				<div class="assessment-flow__index" aria-hidden="true">{index + 1}</div>
 				<div class="assessment-flow__body">
-					<strong>{step.label}</strong>
+					{step.stage ? <AssessmentBadge stage={step.stage} label={step.label} /> : <strong>{step.label}</strong>}
 					{step.meta && <span class="assessment-flow__meta">{step.meta}</span>}
 					<p>{step.detail}</p>
 				</div>

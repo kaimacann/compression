@@ -1,6 +1,6 @@
 ---
 title: Compression API proposal
-description: 'Technical design for a separate compression API supporting Terra Symposium assets.'
+description: "Technical design for a separate compression API supporting Terra Symposium assets."
 ---
 
 > **Status:** proposal for in-class review. This document is authored here and is not part of the official Canvas specification.
@@ -120,17 +120,17 @@ Repository layout:
 
 ### 5.1 Runtime components
 
-| Component | Responsibility | Initial implementation |
-| --- | --- | --- |
-| API service | HTTP, validation, orchestration, error responses | Separate service in apps/api |
-| Contract package | Versioned schemas and validation | JSON Schema or equivalent, pending dependency decision |
-| Asset processor | Lossless compression and output metadata | Deterministic library-backed module |
-| Image classifier | Classify supported image representations | Explicit rules and fixtures |
-| SVG converter | Convert approved stroke data to SVG | Sanitised, deterministic renderer |
-| Storage adapter | Store original/output objects and metadata | Local filesystem first; object store only if approved |
-| Security package | Contract encryption and authentication | Vetted AEAD dependency; no custom cryptography |
-| C sorting worker | Sort asset records by an agreed key | Standalone C executable using approved standard libraries |
-| Review UI | Upload, inspect, sort, and retrieve | Minimal server-rendered or static client |
+| Component        | Responsibility                                   | Initial implementation                                    |
+| ---------------- | ------------------------------------------------ | --------------------------------------------------------- |
+| API service      | HTTP, validation, orchestration, error responses | Separate service in apps/api                              |
+| Contract package | Versioned schemas and validation                 | JSON Schema or equivalent, pending dependency decision    |
+| Asset processor  | Lossless compression and output metadata         | Deterministic library-backed module                       |
+| Image classifier | Classify supported image representations         | Explicit rules and fixtures                               |
+| SVG converter    | Convert approved stroke data to SVG              | Sanitised, deterministic renderer                         |
+| Storage adapter  | Store original/output objects and metadata       | Local filesystem first; object store only if approved     |
+| Security package | Contract encryption and authentication           | Vetted AEAD dependency; no custom cryptography            |
+| C sorting worker | Sort asset records by an agreed key              | Standalone C executable using approved standard libraries |
+| Review UI        | Upload, inspect, sort, and retrieve              | Minimal server-rendered or static client                  |
 
 ### 5.2 Data flow
 
@@ -172,13 +172,13 @@ Failure rules:
 
 ### 6.1 Endpoints
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| POST | /v1/assets | Upload an asset and request processing |
-| GET | /v1/assets/{assetId} | Read asset status and metadata |
-| GET | /v1/assets/{assetId}/content | Retrieve an approved representation |
-| GET | /v1/assets | List assets with C-backed sorting |
-| GET | /healthz | Liveness check for the hosted service |
+| Method | Path                         | Purpose                                |
+| ------ | ---------------------------- | -------------------------------------- |
+| POST   | /v1/assets                   | Upload an asset and request processing |
+| GET    | /v1/assets/{assetId}         | Read asset status and metadata         |
+| GET    | /v1/assets/{assetId}/content | Retrieve an approved representation    |
+| GET    | /v1/assets                   | List assets with C-backed sorting      |
+| GET    | /healthz                     | Liveness check for the hosted service  |
 
 Initial request fields:
 
@@ -248,12 +248,12 @@ Recommended security boundary:
 
 ### 8.2 Representation decisions
 
-| Classification | Default action | Fallback |
-| --- | --- | --- |
-| Colour data | Store a compact lossless representation | Preserve original |
-| Background | Store a lossless background representation | Preserve original |
-| Stroke | Convert sanitised geometry to SVG | Preserve original |
-| Unknown | No transformation | Preserve original |
+| Classification | Default action                             | Fallback          |
+| -------------- | ------------------------------------------ | ----------------- |
+| Colour data    | Store a compact lossless representation    | Preserve original |
+| Background     | Store a lossless background representation | Preserve original |
+| Stroke         | Convert sanitised geometry to SVG          | Preserve original |
+| Unknown        | No transformation                          | Preserve original |
 
 Constraints:
 
