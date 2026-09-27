@@ -1,0 +1,29 @@
+## Main -- Haadi
+
+<!-- do some research on optimisation for filters -- whats the minimum number of loops -- can filters be applied concurrently -- whats the industry standard -->
+
+```javascript
+/**
+ * Wrapper that triggers for each file path the file handling
+ * @param array file paths
+ * @remark -- must be hosted paths for testing? as ed only supports a remote environment
+ */
+function c+efiles
+```
+
+```javascript
+/**
+ * Wrapper that triggers for each file path the file handling
+ * @param array file paths
+ * @remark -- must be hosted paths for testing? as ed only supports a remote environment
+ */
+function c+efiles
+```
+
+```javascript
+/**
+ * Compresses and encrypts file
+ * @param array file path
+ */
+function c+efile
+```
