@@ -8,44 +8,27 @@
  * @file compression.h
  * @brief Compression API declarations.
  *
- * Data structures are opaque API types; their definitions and implementations are developed separately.
+ * Data structures are opaque API types. Prototypes marked [API] are declared
+ * below; their definitions belong in implementation files. Names marked ~ are
+ * external placeholders, not declared or defined by this header. They were
+ * included provisionally, pending contributions from other group members.
  *
  * @code
- * processAssetUpload(upload)
- * |
- * +-- validateAssetUpload(upload)
- * |   +-- readAssetFile(fileReference)
- * |   +-- detectAssetFormat(bytes, declaredMetadata)
- * |   `-- computeAssetChecksum(source bytes)
- * |
- * +-- choose operation
- * |   +-- compress
- * |   |   +-- document / PDF
- * |   |   |   `-- compressDocument
- * |   |   |       +-- document streams -> losslessCompress
- * |   |   |       `-- PDF image streams
- * |   |   |           +-- collectPdfImageXObjects
- * |   |   |           `-- for each XObject
- * |   |   |               +-- processPdfImageXObject
- * |   |   |               `-- losslessCompress
- * |   |   +-- raster image
- * |   |   |   +-- compressImage
- * |   |   |   |   +-- encodeClassifiedColorData
- * |   |   |   |   `-- encodeClassifiedBackground
- * |   |   |   +-- losslessCompress
- * |   |   |   `-- lossyCompress [explicit]
- * |   |   +-- stroke geometry
- * |   |   |   `-- svgise
- * |   |   `-- other byte stream
- * |   |       `-- losslessCompress
- * |   `-- decompress
- * |       +-- document -> decompressDocument
- * |       +-- image    -> decompressImage
- * |       `-- stream   -> decompress
- * |
- * `-- write selected output
- *     +-- computeAssetChecksum
- *     `-- writeAssetFile
+ * ~processAssetUpload(input, policy)
+ * +-- ~detectInputOutput(metadata, operation) // kind of asset, kind of compression
+ * +-- compressFile(file, operation)
+ * |   +-- document/PDF: [API] compressDocument(documentBytes, policy)
+ * |   |   +-- [API] collectPdfImageXObjects(parsedPdf)
+ * |   |   +-- [API] processPdfImageXObject(parsedPdf, imageObject)
+ * |   |   +-- [API] losslessCompress(input, algorithm, options)
+ * |   +-- raster: [API] compressImage(decodedImage, policy)
+ * |   |   +-- [API] encodeClassifiedColorData(image, classification)
+ * |   |   +-- [API] encodeClassifiedBackground(image, classification)
+ * |   |   +-- [API] lossyCompress(imageSamples, targetFormat, profile) [explicit]
+ * |   |   +-- strokes: [API] svgise(strokeGeometry, options)
+ * +-- decompressFile(file, operation)
+ * |   +-- [API] decompressDocument(encodedBytes, codec)
+ * |   +-- [API] decompressImage(encodedBytes, format, codec)
  * @endcode
  */
 
@@ -73,6 +56,32 @@ typedef struct StrokeGeometry StrokeGeometry;
 typedef struct SvgOptions SvgOptions;
 typedef struct SvgSerializationResult SvgSerializationResult;
 typedef struct DecompressionResult DecompressionResult;
+
+/**
+ * @owner: kaimacann
+ * @brief compressFile: write a byte-level RLE encoding of a file.
+ *
+ * Each encoded run is stored as a one-byte count (1–255) followed by its byte
+ * value. The encoding is lossless but can be larger than the source.
+ *
+ * @param file Path of the source file.
+ * @param operation Type of compression (e.g. lossy, lossless, svg) of the file.
+ * @return 1 on success, 0 on an I/O or argument error.
+ */
+int compressFile(const char *inputPath, const char *outputPath);
+
+/**
+ * @owner: kaimacann
+ * @brief decompressFile: restore a file encoded by compressFile.
+ *
+ * Rejects zero-length runs and incomplete count/value records. Output is
+ * streamed, so no full-file buffer is allocated.
+ *
+ * @param file Pointer to the RLE-encoded file.
+ * @param operation The decompression operation specifics.
+ * @return 1 on success, 0 on malformed input or an I/O/argument error.
+ */
+int decompressFile(const char *inputPath, const char *outputPath);
 
 /**
  * @owner: kaimacann
