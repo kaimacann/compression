@@ -1,5 +1,5 @@
 ---
-title: Description
+title: Brief
 description: The project brief, development process, checkpoints, and example projects.
 ---
 

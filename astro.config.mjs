@@ -10,12 +10,6 @@ export default defineConfig({
       description:
         "Readable Markdown documentation for Assessment Task 3: Group Project.",
       customCss: ["./src/styles/custom.css"],
-      sidebar: [
-        {
-          label: "Contents",
-          items: [{ autogenerate: { directory: "." } }],
-        },
-      ],
     }),
   ],
 });
