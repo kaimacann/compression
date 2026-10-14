@@ -1,7 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
+#include "fileOutput.c"
 
 /**
  * Header file with function prototypes relating to file selection and output
