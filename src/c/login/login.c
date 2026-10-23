@@ -100,7 +100,7 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
     }
 }
 
-int main() {
+int loginScreen() {
     char credentials[MAX_ACCOUNTS][2][CREDENTIAL_LENGTH]; // Creates 3D array to hold usernames and passwords.
     int num_credentials = 0;
     if (loadCredentials(credentials, &num_credentials) != 0) {
@@ -108,11 +108,10 @@ int main() {
         return 1; // Failure
     }
 
-    if (authenticateUser(credentials, num_credentials) == 0) {
-        // Continue to menu()
+    if (authenticateUser(credentials, num_credentials) == 1) {
+        printf("Exiting program.\n");
+        return 1; //Failure
     }
-    
-    printf("Exiting program.\n");
 
     return 0; // Success
 }
