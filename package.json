@@ -12,11 +12,11 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.42.1",
-    "astro": "^7.2.10",
-    "sharp": "^0.35.3"
+    "@astrojs/starlight": "^0.42.6",
+    "astro": "^7.4.2",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
-    "prettier": "^3.9.8"
+    "prettier": "^3.9.10"
   }
 }
