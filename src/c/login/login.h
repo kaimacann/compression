@@ -5,6 +5,7 @@
 
 /* LOGIN — educational local-account interface. */
 
+int loginScreen(char *username);
 /**
  * Create an account for username using password and write its verifier to
  * ACCOUNT_FILE. Returns 0 on success and 1 on failure. Never store plaintext

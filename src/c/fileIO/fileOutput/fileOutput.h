@@ -1,11 +1,8 @@
-#include "fileOutput.c"
-
+#include "../file.c"
 /**
  * Header file with function prototypes relating to file selection and output
  * All functions have been created, and will be implemented by Haadi Anwary - 25578814
  */
-
-typedef struct file file_t;
 
 /**
  * Creates a list of selected files and files to display.

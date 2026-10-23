@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <string.h>
+
 #include "../login/login.h"
 #include "../compression/compression.h"
 #include "../encryption/encryption.h"
@@ -7,6 +9,10 @@
 
 int main() {
     printf("Welcome to the compression script. \n");
+    char username[100];
+    strcpy(username, "testperson67");
+    loginScreen(username);
+    
 
     int selection = 0;
     do {
@@ -16,10 +22,16 @@ int main() {
                "3. Exit program\n");
 
         scanf("%d", &selection);
+
+        switch (selection) {
+            case 1: selectFiles(username);
+                break;
+                
+            case 2: browseFiles();
+                break;
+        }
     } while (selection != 3);
 
-    switch (selection) {
-        case:
-    }
+    printf("Thanks! \n");
     return 0;
 }

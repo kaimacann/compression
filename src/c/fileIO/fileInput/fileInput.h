@@ -1,11 +1,8 @@
-#include "fileInput.c"
-
+#include "../file.c"
 /**
  * Header file with function prototypes relating to file input
  * All functions have been created, and will be implemented by Haadi Anwary - 25578814
  */
-
-typedef struct file file_t;
 
 /**
  * - Function that creates and populates a list of user selected files from multiple locations.
@@ -18,6 +15,16 @@ typedef struct file file_t;
  * - number of successfully inputted files
  */
 int selectFiles(char username[]);
+
+/**
+ * Displays the files in a given folder location
+ */
+void displayFiles(char folderAddress[]);
+
+/**
+ * Creates a file from a given name
+ */
+file_t createFile(char folderAddress[], char username[]);
 
 /**
  * - Displays the items in the current folder address
