@@ -14,7 +14,7 @@
  * Outputs:
  * - Number of outputted files
  */
-int browseFiles();
+int browseFiles(void);
 
 /**
  * Displays the given file list with a set amount of files per page.
@@ -60,7 +60,7 @@ void modifySearch(file_t fileListp[], int* totalFiles);
  * Outputs:
  * - void
  */
-void displayHelpMenu();
+void displayHelpMenu(void);
 
 /**
  * Takes the sort section of the prompt and rearranges list to follow
@@ -172,4 +172,12 @@ int handleFileOutput(file_t* file, char outputFolderAdr[]);
  * - if it was successful (int)
  */
 int readFileBinary(file_t* pointer);
+
+/* OUTPUT FILE STUB */
+/**
+ * Placeholder for writing compression output to a destination path.
+ *
+ * @param outputPath Destination path for the generated data.
+ */
+void writeOutputFile(const char *outputPath);
 

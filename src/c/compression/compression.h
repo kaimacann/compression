@@ -1,88 +1,108 @@
-#ifndef COMPRESSION_H
-#define COMPRESSION_H
-
-#include <stdlib.h>
-
 /**
  * @owner: kaimacann
  * @file compression.h
  * @brief Compression API declarations.
  *
- * Data structures are opaque API types. Prototypes marked [API] are declared
- * below; their definitions belong in implementation files. Names marked ~ are
- * external placeholders, not declared or defined by this header. They were
- * included provisionally, pending contributions from other group members.
+ * Data structures are opaque API types. The declarations below are planned
+ * entry points; their current definitions are stubs for the menu demo.
  *
  * @code
- * ~processAssetUpload(input, policy)
- * +-- ~detectInputOutput(metadata, operation) // kind of asset, kind of compression
- * +-- compressFile(file, operation)
- * |   +-- document/PDF: [API] compressDocument(documentBytes, policy)
- * |   |   +-- [API] collectPdfImageXObjects(parsedPdf)
- * |   |   +-- [API] processPdfImageXObject(parsedPdf, imageObject)
- * |   |   +-- [API] losslessCompress(input, algorithm, options)
- * |   +-- raster: [API] compressImage(decodedImage, policy)
- * |   |   +-- [API] encodeClassifiedColorData(image, classification)
- * |   |   +-- [API] encodeClassifiedBackground(image, classification)
- * |   |   +-- [API] lossyCompress(imageSamples, targetFormat, profile) [explicit]
- * |   |   +-- strokes: [API] svgise(strokeGeometry, options)
- * +-- decompressFile(file, operation)
- * |   +-- [API] decompressDocument(encodedBytes, codec)
- * |   +-- [API] decompressImage(encodedBytes, format, codec)
+ * main() -> showMainMenu()
+ * +-- compressFile(inputPath, outputPath)
+ * |   +-- fileIO.readInputFile(inputPath)
+ * |   +-- compress(input, policy)
+ * |       +-- PDF/document: compressDocument(input, policy)
+ * |       |   +-- PDF: parse -> collect image XObjects
+ * |       |       +-- for each image: process -> losslessCompress
+ * |       |       +-- replace each accepted image candidate [stub]
+ * |       |       +-- serialize PDF [stub]
+ * |       +-- image: decode -> compressImage(decodedImage, policy)
+ * |           +-- raster mode: classified encoders / explicitly lossy encoder
+ * |           +-- strokes mode: svgise
+ * |   +-- fileIO.writeOutputFile(outputPath)
+ * +-- decompressFile(inputPath, outputPath)
+ *     +-- fileIO.readInputFile(inputPath)
+ *     +-- decompressDocument / decompressImage / decompress
+ *     +-- fileIO.writeOutputFile(outputPath)
  * @endcode
  */
 
+#ifndef COMPRESSION_H
+#define COMPRESSION_H
+
+/*//////////////////////////////////////////////////
+IMPORTS
+//////////////////////////////////////////////////*/
+
+#include <stdlib.h>
+
+/*//////////////////////////////////////////////////
+OPAQUE API TYPES
+//////////////////////////////////////////////////*/
+
+/* SHARED INPUT AND POLICY */
+typedef struct CompressionInput CompressionInput;
+typedef struct CompressionPolicy CompressionPolicy;
+typedef struct CompressionAlgorithm CompressionAlgorithm;
+typedef struct CompressionCodec CompressionCodec;
+typedef struct CodecOptions CodecOptions;
+typedef struct ImageFormat ImageFormat;
+typedef struct LossyProfile LossyProfile;
+typedef struct SvgOptions SvgOptions;
+
+/* PDF OBJECTS */
 typedef struct ParsedPdf ParsedPdf;
 typedef struct PdfImageObject PdfImageObject;
 typedef struct PdfImageXObjectList PdfImageXObjectList;
 typedef struct PdfImageCandidate PdfImageCandidate;
-typedef struct CompressionCodec CompressionCodec;
+
+/* DOCUMENT RESULTS */
 typedef struct DocumentDecodeResult DocumentDecodeResult;
-typedef struct CompressionPolicy CompressionPolicy;
 typedef struct DocumentCompressionResult DocumentCompressionResult;
+
+/* IMAGE DATA AND RESULTS */
 typedef struct DecodedImage DecodedImage;
 typedef struct ImageCompressionResult ImageCompressionResult;
 typedef struct ImageClassification ImageClassification;
 typedef struct EncodedImageCandidate EncodedImageCandidate;
-typedef struct ImageFormat ImageFormat;
 typedef struct ImageDecodeResult ImageDecodeResult;
-typedef struct CompressionInput CompressionInput;
-typedef struct CompressionAlgorithm CompressionAlgorithm;
-typedef struct CodecOptions CodecOptions;
 typedef struct LosslessCompressionResult LosslessCompressionResult;
-typedef struct LossyProfile LossyProfile;
 typedef struct LossyCompressionResult LossyCompressionResult;
+
+/* VECTOR AND GENERAL DECOMPRESSION RESULTS */
 typedef struct StrokeGeometry StrokeGeometry;
-typedef struct SvgOptions SvgOptions;
 typedef struct SvgSerializationResult SvgSerializationResult;
 typedef struct DecompressionResult DecompressionResult;
 
+/*//////////////////////////////////////////////////
+PUBLIC API
+//////////////////////////////////////////////////*/
+
+/* MENU-DRIVEN FILE FLOWS */
 /**
- * @owner: kaimacann
- * @brief compressFile: write a byte-level RLE encoding of a file.
+ * Runs the file-level compression flow for a source and destination path.
+ * The demo distinguishes PDF/document input from image input, then calls the
+ * corresponding compression stubs. Encoding and output writing remain stubs.
  *
- * Each encoded run is stored as a one-byte count (1–255) followed by its byte
- * value. The encoding is lossless but can be larger than the source.
- *
- * @param file Path of the source file.
- * @param operation Type of compression (e.g. lossy, lossless, svg) of the file.
- * @return 1 on success, 0 on an I/O or argument error.
+ * @param inputPath Path of the source file.
+ * @param outputPath Path where encoded bytes should be written.
+ * @return 0 while the demo implementation is a stub.
  */
 int compressFile(const char *inputPath, const char *outputPath);
 
 /**
- * @owner: kaimacann
- * @brief decompressFile: restore a file encoded by compressFile.
+ * Runs the file-level restoration flow for an encoded source and destination.
  *
- * Rejects zero-length runs and incomplete count/value records. Output is
- * streamed, so no full-file buffer is allocated.
+ * The demo reads the source bytes, then calls decoder and output-writer stubs;
+ * it does not decode or write the restored bytes.
  *
- * @param file Pointer to the RLE-encoded file.
- * @param operation The decompression operation specifics.
- * @return 1 on success, 0 on malformed input or an I/O/argument error.
+ * @param inputPath Path of the encoded file.
+ * @param outputPath Path where restored bytes should be written.
+ * @return 0 while the demo implementation is a stub.
  */
 int decompressFile(const char *inputPath, const char *outputPath);
 
+/* PDF OBJECT PROCESSING */
 /**
  * @owner: kaimacann
  * @brief collectPdfImageXObjects: find eligible PDF image XObjects.
@@ -107,10 +127,10 @@ PdfImageXObjectList *collectPdfImageXObjects(const ParsedPdf *parsedPdf);
  * @param imageObject Reference returned by collectPdfImageXObjects.
  * @return Replacement candidate and metadata, or a preserve-unchanged result.
  */
-PdfImageCandidate *processPdfImageXObject(
-    const ParsedPdf *parsedPdf,
-    const PdfImageObject *imageObject);
+PdfImageCandidate *processPdfImageXObject(const ParsedPdf *parsedPdf,
+                                          const PdfImageObject *imageObject);
 
+/* DOCUMENT PROCESSING */
 /**
  * @owner: kaimacann
  * @brief decompressDocument: decode bytes with their matching codec.
@@ -123,9 +143,8 @@ PdfImageCandidate *processPdfImageXObject(
  *   [DEFLATE (RFC 1951)](https://www.rfc-editor.org/rfc/rfc1951).
  * @return Decoded bytes and status, or an error.
  */
-DocumentDecodeResult *decompressDocument(
-    const CompressionInput *encodedBytes,
-    const CompressionCodec *codec);
+DocumentDecodeResult *decompressDocument(const CompressionInput *encodedBytes,
+                                         const CompressionCodec *codec);
 
 /**
  * @owner: kaimacann
@@ -139,17 +158,17 @@ DocumentDecodeResult *decompressDocument(
  * @param policy Allowed codecs, limits, and explicit transformations.
  * @return Selected bytes, sizes, checksums, processing details, warnings, and status.
  */
-DocumentCompressionResult *compressDocument(
-    const CompressionInput *documentBytes,
-    const CompressionPolicy *policy);
+DocumentCompressionResult *compressDocument(const CompressionInput *documentBytes,
+                                            const CompressionPolicy *policy);
 
+/* RASTER IMAGE PROCESSING */
 /**
  * @owner: kaimacann
- * @brief compressImage: produce and evaluate a raster-image candidate.
+ * @brief compressImage: produce and evaluate an image candidate by policy mode.
  *
- * Prefer reversible encoding. Allow changes to samples, dimensions, or appearance
- * only when loss is explicitly permitted; preserve alpha and relevant metadata,
- * and retain the source.
+ * Raster and strokes are image-processing modes. Prefer reversible raster
+ * encoding; allow changes to samples, dimensions, or appearance only when loss
+ * is explicitly permitted. Preserve alpha and relevant metadata, and retain the source.
  *
  * @param decodedImage Samples, layout, and reconstruction metadata.
  * @param policy Allowed formats, mode, limits, and encoder settings. References:
@@ -158,9 +177,8 @@ DocumentCompressionResult *compressDocument(
  * @return Selected image, settings, sizes, checksums, warnings, and status; may
  *   select the source if no valid smaller candidate is produced.
  */
-ImageCompressionResult *compressImage(
-    const DecodedImage *decodedImage,
-    const CompressionPolicy *policy);
+ImageCompressionResult *compressImage(const DecodedImage *decodedImage,
+                                      const CompressionPolicy *policy);
 
 /**
  * @owner: kaimacann
@@ -175,9 +193,8 @@ ImageCompressionResult *compressImage(
  *   and [PNG indexed-colour encoding](https://www.w3.org/TR/png-3/).
  * @return Encoded candidate and status; candidate size selection belongs to caller.
  */
-EncodedImageCandidate *encodeClassifiedColorData(
-    const DecodedImage *image,
-    const ImageClassification *classification);
+EncodedImageCandidate *encodeClassifiedColorData(const DecodedImage *image,
+                                                 const ImageClassification *classification);
 
 /**
  * @owner: kaimacann
@@ -189,12 +206,12 @@ EncodedImageCandidate *encodeClassifiedColorData(
  * @param image Decoded samples, layout, and metadata.
  * @param classification Validated classification; see the
  *   [classification policy](../../content/docs/plan/0-overview.md#8-image-processing-policy).
- *   [PackBits RLE](https://download.osgeo.org/libtiff/doc/TIFF6.pdf) is a reference, not a required encoding.
+ *   [PackBits RLE](https://download.osgeo.org/libtiff/doc/TIFF6.pdf) is a reference, not a required
+ * encoding.
  * @return Encoded candidate and status; candidate size selection belongs to caller.
  */
-EncodedImageCandidate *encodeClassifiedBackground(
-    const DecodedImage *image,
-    const ImageClassification *classification);
+EncodedImageCandidate *encodeClassifiedBackground(const DecodedImage *image,
+                                                  const ImageClassification *classification);
 
 /**
  * @owner: kaimacann
@@ -208,17 +225,17 @@ EncodedImageCandidate *encodeClassifiedBackground(
  * @param codec Decoder and parameters matching that format.
  * @return Decoded samples, layout, metadata, and status, or an error.
  */
-ImageDecodeResult *decompressImage(
-    const CompressionInput *encodedBytes,
-    const ImageFormat *format,
-    const CompressionCodec *codec);
+ImageDecodeResult *decompressImage(const CompressionInput *encodedBytes, const ImageFormat *format,
+                                   const CompressionCodec *codec);
 
+/* BYTE AND VECTOR CODECS */
 /**
  * @owner: kaimacann
  * @brief losslessCompress: build a reversible candidate from bytes or samples.
  *
- * Input is already read, format-detected, and classified. PDF input is one eligible extracted stream; PDF parsing and rewriting stay external.
- * The candidate may be larger, so the caller validates and selects it.
+ * Input is already read, format-detected, and classified. For PDF input, it is one extracted
+ * image stream prepared by document processing. The caller validates the candidate and updates
+ * the PDF structure. The candidate may be larger than the source.
  *
  * @param input Source bytes or samples and length.
  * @param algorithm Selected lossless technique (references, not requirements):
@@ -227,19 +244,20 @@ ImageDecodeResult *decompressImage(
  *   [PNG filters + DEFLATE](https://www.w3.org/TR/png-3/),
  *   [CCITT Group 4 (ITU-T T.6)](https://www.itu.int/rec/T-REC-T.6/en).
  * @param options Codec settings and output limits.
- * @return Candidate bytes, length, algorithm, and status. Private codec helpers need separate documentation only if exposed publicly.
+ * @return Candidate bytes, length, algorithm, and status. Private codec helpers need separate
+ * documentation only if exposed publicly.
  */
-LosslessCompressionResult *losslessCompress(
-    const CompressionInput *input,
-    const CompressionAlgorithm *algorithm,
-    const CodecOptions *options);
+LosslessCompressionResult *losslessCompress(const CompressionInput *input,
+                                            const CompressionAlgorithm *algorithm,
+                                            const CodecOptions *options);
 
 /**
  * @owner: kaimacann
  * @brief lossyCompress: build an explicitly lossy raster candidate.
  *
  * Never alter PDF text, vectors, or structure; never use as an implicit fallback.
- * The external processor owns consent, source retention, previews, metadata, and candidate selection.
+ * The external processor owns consent, source retention, previews, metadata, and candidate
+ * selection.
  *
  * @param imageSamples Decoded raster samples and layout.
  * @param targetFormat Consumer-supported image format; technique reference:
@@ -247,10 +265,8 @@ LosslessCompressionResult *losslessCompress(
  * @param profile Approved quality/dimension limits and encoder settings.
  * @return Lossy candidate bytes, applied settings, and status.
  */
-LossyCompressionResult *lossyCompress(
-    const DecodedImage *imageSamples,
-    const ImageFormat *targetFormat,
-    const LossyProfile *profile);
+LossyCompressionResult *lossyCompress(const DecodedImage *imageSamples,
+                                      const ImageFormat *targetFormat, const LossyProfile *profile);
 
 /**
  * @owner: kaimacann
@@ -264,9 +280,7 @@ LossyCompressionResult *lossyCompress(
  * @param options SVG units, precision, and serialization settings.
  * @return SVG bytes and status; invalid geometry returns an error.
  */
-SvgSerializationResult *svgise(
-    const StrokeGeometry *strokeGeometry,
-    const SvgOptions *options);
+SvgSerializationResult *svgise(const StrokeGeometry *strokeGeometry, const SvgOptions *options);
 
 /**
  * @owner: kaimacann
@@ -280,9 +294,7 @@ SvgSerializationResult *svgise(
  * @param maxOutputBytes Maximum decoded size.
  * @return Restored bytes/samples and status, or an error without partial output.
  */
-DecompressionResult *decompress(
-    const CompressionInput *compressedInput,
-    const CompressionAlgorithm *algorithm,
-    size_t maxOutputBytes);
+DecompressionResult *decompress(const CompressionInput *compressedInput,
+                                const CompressionAlgorithm *algorithm, size_t maxOutputBytes);
 
 #endif /* COMPRESSION_H */
