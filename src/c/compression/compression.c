@@ -29,9 +29,9 @@ IMPORTS
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "compression.h"
 #include "../fileIO/fileInput/fileInput.h"
 #include "../fileIO/fileOutput/fileOutput.h"
+#include "compression.h"
 
 /*//////////////////////////////////////////////////
 PRIVATE FLOW TYPES
@@ -107,7 +107,7 @@ static int decodeImageInput(const CompressionInput *encodedImage, DecodedImage *
 }
 
 static int replacePdfImageXObject(ParsedPdf *parsedPdf, const PdfImageObject *imageObject,
-                                 const PdfImageCandidate *candidate) {
+                                  const PdfImageCandidate *candidate) {
     (void)parsedPdf;
     (void)imageObject;
     (void)candidate;
