@@ -1,51 +1,36 @@
 ---
-title: Overview
+title: Compression project
 description: "Assessment summary and project documentation."
 ---
 
 import AssessmentFlow from "../../components/AssessmentFlow.astro";
 import AssessmentBadge from "../../components/AssessmentBadge.astro";
-import { Aside, Card, CardGrid } from "@astrojs/starlight/components";
 
 # Compression project
 
 Reference site for the official Canvas specification and the authored compression API proposal.
 
-<Aside type="caution" title="Authority">
-  The Canvas pages are the source of truth for requirements, dates, and marking
-  decisions. The pages under **Project docs (authored)** are design notes and
-  proposals.
-</Aside>
+<aside class="compression-note" aria-label="Source of truth">
+  <strong>Authority</strong>
+  <p>The Canvas pages are the source of truth for requirements, dates, and marking decisions. The pages under <strong>Project docs (authored)</strong> are design notes and proposals.</p>
+</aside>
 
 ## Documents
 
-<CardGrid>
-  <Card title="Description" icon="open-book" href="/assessment/description/">
-    Official project brief, checkpoints, requirements, and examples.
-  </Card>
-  <Card
-    title="Submission & report"
-    icon="document"
-    href="/assessment/submission-report/"
-  >
-    Official submission rules, page limits, deliverables, and rubric.
-  </Card>
-  <Card
-    title="API proposal"
-    icon="laptop"
-    href="/assessment/compression-api-proposal/"
-  >
-    Authored technical proposal for a separate Terra compression API repository.
-  </Card>
-  <Card
-    title="Component catalogue"
-    icon="list-format"
-    href="/assessment/terra-content-component-catalog/"
-  >
-    Authored static audit of Terra Docs, Article, and Problem content
-    components.
-  </Card>
-</CardGrid>
+<div className="compression-card-grid">
+  <a className="compression-card" href="/assessment/description/">
+    <strong>Description</strong>
+    <span>Official project brief, checkpoints, requirements, and examples.</span>
+  </a>
+  <a className="compression-card" href="/assessment/submission-report/">
+    <strong>Submission &amp; report</strong>
+    <span>Submission rules, page limits, deliverables, and rubric.</span>
+  </a>
+  <a className="compression-card" href="/assessment/compression-api-proposal/">
+    <strong>API proposal</strong>
+    <span>Authored technical proposal for a separate Terra compression API repository.</span>
+  </a>
+</div>
 
 ## Assessment snapshot
 

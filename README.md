@@ -1,6 +1,6 @@
 # Compression Project Docs
 
-Readable Astro Starlight documentation for Assessment Task 3: Group Project.
+Assessment documentation built with the shared Terra Docs layout.
 
 ## Local development
 
@@ -18,7 +18,7 @@ pnpm build
 pnpm preview
 ```
 
-The assessment pages and the separate in-class API proposal live under `src/content/docs/assessment/`. The site also includes reusable, accessible HTML flow diagrams for the project lifecycle and checkpoint timeline.
+The assessment pages and the separate in-class API proposal live under `src/content/docs/assessment/`. The shared Docs package provides the page shell and navigation; this repository keeps its assessment-specific flow diagrams and badge components.
 
 ## C program scaffold
 
