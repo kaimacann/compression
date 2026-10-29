@@ -84,6 +84,30 @@ static int showMainMenu(void) {
     return readMenuChoice("Selection: ");
 }
 
+/** Reads source and destination paths, then runs the selected file action.
+ * @param inputPrompt Prompt appropriate to the action's accepted source files.
+ * @param action File-level compression or decompression function.
+ * @return -1 when input ends, otherwise zero after handling the request.
+ */
+static int runFileAction(const char *inputPrompt,
+                         int (*action)(const char *, const char *)) {
+    char inputPath[512];
+    char outputPath[512];
+    int pathStatus = readPath(inputPrompt, inputPath, sizeof(inputPath));
+
+    if (pathStatus < 0)
+        return -1;
+    if (pathStatus == 0)
+        return 0;
+
+    pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
+    if (pathStatus < 0)
+        return -1;
+    if (pathStatus == 1)
+        action(inputPath, outputPath);
+    return 0;
+}
+
 /*//////////////////////////////////////////////////
 APPLICATION ENTRY POINT
 //////////////////////////////////////////////////*/
@@ -93,8 +117,6 @@ APPLICATION ENTRY POINT
  */
 int main(void) {
     int selection;
-    char inputPath[512];
-    char outputPath[512];
 
     // INTRODUCE THE DEMO
     puts("Compression program stub");
@@ -105,42 +127,14 @@ int main(void) {
 
         // ROUTE EACH ACTION TO ITS FILE-LEVEL COMPRESSION FLOW
         switch (selection) {
-        case 1: {
-            int pathStatus = readPath("Input path (PDF or image): ", inputPath, sizeof(inputPath));
-            if (pathStatus < 0) {
+        case 1:
+            if (runFileAction("Input path (PDF or image): ", compressFile) < 0)
                 selection = -1;
-                break;
-            }
-            if (pathStatus == 0)
-                break;
-
-            pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
-            if (pathStatus < 0) {
-                selection = -1;
-                break;
-            }
-            if (pathStatus == 1)
-                compressFile(inputPath, outputPath);
             break;
-        }
-        case 2: {
-            int pathStatus = readPath("Input path: ", inputPath, sizeof(inputPath));
-            if (pathStatus < 0) {
+        case 2:
+            if (runFileAction("Input path: ", decompressFile) < 0)
                 selection = -1;
-                break;
-            }
-            if (pathStatus == 0)
-                break;
-
-            pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
-            if (pathStatus < 0) {
-                selection = -1;
-                break;
-            }
-            if (pathStatus == 1)
-                decompressFile(inputPath, outputPath);
             break;
-        }
         default:
             break;
         }
