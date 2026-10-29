@@ -1,5 +1,4 @@
 /**
- * @file compression.h
  * @owner: kaimacann
  * @file compression.h
  * @brief Compression API declarations.
