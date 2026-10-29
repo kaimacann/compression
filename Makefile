@@ -6,16 +6,16 @@ CFLAGS ?= -std=c11 -Wall -Wextra -pedantic
 # Keep the standalone build limited to its menu and compression flow.
 C_SOURCES = \
 	src/c/main/main.c \
-	src/c/lib/file_io/input.c \
-	src/c/lib/file_io/output.c \
+	src/c/fileIO/fileInput/fileInput.c \
+	src/c/fileIO/fileOutput/fileOutput.c \
 	src/c/compression/compression.c
 
 # Included declarations and shared file record
 C_DEPS = \
-	src/c/lib/file_io/file.h \
-	src/c/lib/file_io/input.h \
-	src/c/lib/file_io/output.h \
-	src/c/compression/compression.h
+	src/c/fileIO/fileInput/fileInput.h \
+	src/c/fileIO/fileOutput/fileOutput.h \
+	src/c/compression/compression.h \
+	src/c/fileIO/file.c
 
 # BUILD AND RUN TARGETS
 .PHONY: all run clean

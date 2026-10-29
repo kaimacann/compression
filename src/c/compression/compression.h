@@ -1,4 +1,5 @@
 /**
+ * @file compression.h
  * @owner: kaimacann
  * @file compression.h
  * @brief Compression API declarations.
@@ -41,37 +42,61 @@ OPAQUE API TYPES
 //////////////////////////////////////////////////*/
 
 /* SHARED INPUT AND POLICY */
+/** Opaque loaded input bytes and detected type. */
 typedef struct CompressionInput CompressionInput;
+/** Opaque policy selected by the compression flow. */
 typedef struct CompressionPolicy CompressionPolicy;
+/** Opaque codec algorithm descriptor. */
 typedef struct CompressionAlgorithm CompressionAlgorithm;
+/** Opaque codec descriptor used to match encoded data to a decoder. */
 typedef struct CompressionCodec CompressionCodec;
+/** Opaque codec-specific configuration values. */
 typedef struct CodecOptions CodecOptions;
+/** Opaque image format descriptor. */
 typedef struct ImageFormat ImageFormat;
+/** Opaque explicit lossy-compression settings. */
 typedef struct LossyProfile LossyProfile;
+/** Opaque SVG serialization settings. */
 typedef struct SvgOptions SvgOptions;
 
 /* PDF OBJECTS */
+/** Opaque parsed PDF representation. */
 typedef struct ParsedPdf ParsedPdf;
+/** Opaque PDF image XObject reference. */
 typedef struct PdfImageObject PdfImageObject;
+/** Opaque collection of PDF image references. */
 typedef struct PdfImageXObjectList PdfImageXObjectList;
+/** Opaque replacement candidate for one PDF image object. */
 typedef struct PdfImageCandidate PdfImageCandidate;
 
 /* DOCUMENT RESULTS */
+/** Opaque decoded document result. */
 typedef struct DocumentDecodeResult DocumentDecodeResult;
+/** Opaque compressed document candidate and metadata. */
 typedef struct DocumentCompressionResult DocumentCompressionResult;
 
 /* IMAGE DATA AND RESULTS */
+/** Opaque decoded image data and metadata. */
 typedef struct DecodedImage DecodedImage;
+/** Opaque compressed image candidate and metadata. */
 typedef struct ImageCompressionResult ImageCompressionResult;
+/** Opaque validated image classification. */
 typedef struct ImageClassification ImageClassification;
+/** Opaque encoded image candidate. */
 typedef struct EncodedImageCandidate EncodedImageCandidate;
+/** Opaque decoded image result. */
 typedef struct ImageDecodeResult ImageDecodeResult;
+/** Opaque reversible compression result. */
 typedef struct LosslessCompressionResult LosslessCompressionResult;
+/** Opaque explicitly lossy compression result. */
 typedef struct LossyCompressionResult LossyCompressionResult;
 
 /* VECTOR AND GENERAL DECOMPRESSION RESULTS */
+/** Opaque vector stroke geometry. */
 typedef struct StrokeGeometry StrokeGeometry;
+/** Opaque serialized SVG result. */
 typedef struct SvgSerializationResult SvgSerializationResult;
+/** Opaque general decompression result. */
 typedef struct DecompressionResult DecompressionResult;
 
 /*//////////////////////////////////////////////////

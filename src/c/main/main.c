@@ -2,6 +2,10 @@
 IMPORTS
 //////////////////////////////////////////////////*/
 
+/** @file main.c
+ * @brief Interactive compression demo menu and input handling.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +16,10 @@ IMPORTS
 MENU INPUT
 //////////////////////////////////////////////////*/
 
+/** Reads and parses one numeric menu selection.
+ * @param prompt Prompt written before reading input.
+ * @return Parsed selection, zero for invalid input, or -1 at end of input.
+ */
 static int readMenuChoice(const char *prompt) {
     char line[32];
     char *end;
@@ -29,6 +37,12 @@ static int readMenuChoice(const char *prompt) {
     return (int)choice;
 }
 
+/** Reads one non-empty path into a bounded caller-provided buffer.
+ * @param prompt Prompt written before reading input.
+ * @param path Buffer that receives the path.
+ * @param capacity Size of the path buffer.
+ * @return 1 for a path, zero for invalid input, or -1 at end of input.
+ */
 static int readPath(const char *prompt, char *path, size_t capacity) {
     size_t length;
     int ch;
@@ -56,6 +70,9 @@ static int readPath(const char *prompt, char *path, size_t capacity) {
 MENU DISPLAY
 //////////////////////////////////////////////////*/
 
+/** Displays the top-level menu and returns the user's selection.
+ * @return Parsed menu selection, zero for invalid input, or -1 at EOF.
+ */
 static int showMainMenu(void) {
     // SHOW THE TOP-LEVEL COMPRESSION ACTIONS
     puts("\n=== Compression stub ===");
@@ -71,7 +88,9 @@ static int showMainMenu(void) {
 APPLICATION ENTRY POINT
 //////////////////////////////////////////////////*/
 
-/** Runs the compression demo menu until the user exits or input ends. */
+/** @brief Runs the compression demo menu until the user exits or input ends.
+ * @return Zero after the demo menu closes.
+ */
 int main(void) {
     int selection;
     char inputPath[512];
@@ -87,8 +106,7 @@ int main(void) {
         // ROUTE EACH ACTION TO ITS FILE-LEVEL COMPRESSION FLOW
         switch (selection) {
         case 1: {
-            int pathStatus = readPath("Input path (PDF or image): ", inputPath,
-                                     sizeof(inputPath));
+            int pathStatus = readPath("Input path (PDF or image): ", inputPath, sizeof(inputPath));
             if (pathStatus < 0) {
                 selection = -1;
                 break;
