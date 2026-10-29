@@ -36,6 +36,7 @@
 *.x86_64
 *.hex
 /compression-demo
+*.plist
 
 # Debug files
 *.dSYM/
@@ -61,3 +62,4 @@ dist/
 .astro/
 
 .DS_Store
+vendor/*
