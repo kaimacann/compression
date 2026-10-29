@@ -1,0 +1,60 @@
+---
+import { DocsLocalWorkspace } from '@terra-symposium/docs';
+import type { DocsHostTreeNode, DocsLocalPage } from '@terra-symposium/docs';
+import '@terra-symposium/docs/style.css';
+import '../styles/custom.css';
+
+const nodes = [
+	{ title: 'Start here', id: 'start-here', children: [{ title: 'Compression project', href: '/' }] },
+	{
+		title: 'Assessment', id: 'assessment', children: [
+			{ title: 'Description', href: '/assessment/description/' },
+			{ title: 'Submission & report', href: '/assessment/submission-report/' },
+		],
+	},
+	{ title: 'Project docs', id: 'project-docs', children: [{ title: 'Compression API proposal', href: '/assessment/compression-api-proposal/' }] },
+];
+const modules = import.meta.glob('../content/docs/**/*.{md,mdx}', { eager: true }) as Record<string, { default: unknown; frontmatter?: { title?: string; description?: string } }>;
+const sources = import.meta.glob('../content/docs/**/*.{md,mdx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const docs: DocsLocalPage[] = Object.entries(modules).map(([file, module]) => {
+	const slug = file.replace('../content/docs/', '').replace(/(?:^|\/)index\.mdx?$/, '').replace(/\.mdx?$/, '');
+	const id = slug || 'index';
+	const title = module.frontmatter?.title ?? (id === 'index' ? 'Compression Project' : id.split('/').at(-1)!.replace(/-/g, ' ').replace(/\b\w/g, value => value.toUpperCase()));
+	return { id, path: file.replace(/^\.\.\//, ''), pathname: slug ? `/${slug}/` : '/', title, ...(module.frontmatter?.description ? { description: module.frontmatter.description } : {}), markdown: String(sources[file] ?? '').replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '') };
+});
+export async function getStaticPaths() {
+	const modules = import.meta.glob('../content/docs/**/*.{md,mdx}', { eager: true }) as Record<string, { default: unknown; frontmatter?: { title?: string; description?: string } }>;
+	const sources = import.meta.glob('../content/docs/**/*.{md,mdx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+	return Object.entries(modules).map(([file, module]) => {
+		const slug = file.replace('../content/docs/', '').replace(/(?:^|\/)index\.mdx?$/, '').replace(/\.mdx?$/, '');
+		const id = slug || 'index';
+		const title = module.frontmatter?.title ?? (id === 'index' ? 'Compression Project' : id.split('/').at(-1)!.replace(/-/g, ' ').replace(/\b\w/g, value => value.toUpperCase()));
+		const page: DocsLocalPage = { id, path: file.replace(/^\.\.\//, ''), pathname: slug ? `/${slug}/` : '/', title, ...(module.frontmatter?.description ? { description: module.frontmatter.description } : {}), markdown: String(sources[file] ?? '').replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '') };
+		return { params: { slug: page.id === 'index' ? undefined : page.id }, props: { page } };
+	});
+}
+const tree: DocsHostTreeNode[] = nodes.map(section => ({
+	type: 'branch', origName: section.id, title: section.title, path: section.id,
+	children: [{
+		type: 'branch', origName: `${section.id}/guides`, title: 'Guides', path: `${section.id}/guides`,
+		children: section.children.flatMap(item => {
+			const page = docs.find(entry => entry.pathname === item.href);
+			return page ? [{ type: 'leaf' as const, origName: page.id, title: item.title, path: page.path, url: page.pathname, permission: 'read' as const }] : [];
+		}),
+	}],
+}));
+const currentPath = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<meta name="description" content="Assessment documentation for the Compression Project." />
+		<title>Compression Project</title>
+	</head>
+	<body>
+		<DocsLocalWorkspace client:load tree={tree} pages={docs} pathname={currentPath} title="Compression Project" description="Assessment brief, submission guidance, and project proposal." rootPath="/" homePath="/" />
+	</body>
+</html>

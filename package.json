@@ -4,19 +4,27 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
-    "start": "astro dev",
     "build": "astro build",
-    "preview": "astro preview",
-    "format:markdown": "prettier --write README.md 'src/**/*.md' 'src/**/*.mdx'",
-    "check:markdown": "prettier --check README.md 'src/**/*.md' 'src/**/*.mdx'",
-    "astro": "astro"
+    "preview": "pnpm build && astro preview",
+    "format:markdown": "prettier --write README.md 'src/**/*.{md,mdx}'",
+    "check:markdown": "prettier --check README.md 'src/**/*.{md,mdx}'",
+    "prepare": "husky",
+    "changeset": "changeset",
+    "version-packages": "changeset version"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.42.6",
+    "@astrojs/mdx": "^8.0.3",
+    "@astrojs/react": "^7.1.0",
+    "@terra-symposium/docs": "file:vendor/terra-symposium-docs-0.1.42.tgz",
+    "@terra-symposium/styling": "file:vendor/terra-symposium-styling-0.1.27.tgz",
     "astro": "^7.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "sharp": "^0.35.5"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
+    "husky": "^9.1.7",
     "prettier": "^3.9.10"
   }
 }
