@@ -1,6 +1,6 @@
 # Compression Project Docs
 
-Assessment documentation built with the shared Terra Docs layout.
+Assessment documentation built from root Markdown files with the shared `@terra-symposium/docs` site.
 
 ## Local development
 
@@ -8,17 +8,17 @@ Install dependencies and start the local documentation site:
 
 ```sh
 pnpm install
-pnpm dev
+pnpm docs:dev
 ```
 
-Build the static site for verification:
+Build the static site into `docs-dist/`:
 
 ```sh
-pnpm build
-pnpm preview
+pnpm docs:build
+pnpm docs:preview
 ```
 
-The six authored pages live under `src/content/docs/`: the official assessment brief, code and report submission guides, and the compression API proposal and plan. The shared Docs package provides the page shell and navigation; this repository keeps its assessment-specific flow diagrams and badge components.
+The six authored pages live in the root `docs/` folder: the official assessment brief, code and report submission guides, and the compression API proposal and plan. The Docs package supplies routes, 404, reader layout, styling, navigation, and search from those files. Add `.md` or `.mdx` pages to extend the site.
 
 ## C program scaffold
 

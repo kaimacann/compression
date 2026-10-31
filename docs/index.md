@@ -11,11 +11,11 @@ The Canvas pages are the source of truth for requirements, dates, and marking de
 
 ## Documents
 
-- [Brief](/at3/brief/): Official project brief, checkpoints, requirements, and examples.
-- [Code submission](/at3/code/): Ed upload requirements and the code assessment rubric.
-- [Report submission](/at3/report/): Canvas upload requirements, page limit, and report rubric.
-- [API proposal](/plan/0-overview/): Authored technical proposal for a separate Terra compression API repository.
-- [Compression plan](/plan/1-compression/): Research plan for image and PDF compression workflows.
+- [Brief](./at3/brief/): Official project brief, checkpoints, requirements, and examples.
+- [Code submission](./at3/code/): Ed upload requirements and the code assessment rubric.
+- [Report submission](./at3/report/): Canvas upload requirements, page limit, and report rubric.
+- [API proposal](./plan/0-overview/): Authored technical proposal for a separate Terra compression API repository.
+- [Compression plan](./plan/1-compression/): Research plan for image and PDF compression workflows.
 
 ## Assessment snapshot
 
