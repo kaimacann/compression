@@ -62,4 +62,4 @@ dist/
 .astro/
 
 .DS_Store
-vendor/*
+vendor/

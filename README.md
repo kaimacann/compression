@@ -18,7 +18,7 @@ pnpm build
 pnpm preview
 ```
 
-The assessment pages and the separate in-class API proposal live under `src/content/docs/assessment/`. The shared Docs package provides the page shell and navigation; this repository keeps its assessment-specific flow diagrams and badge components.
+The six authored pages live under `src/content/docs/`: the official assessment brief, code and report submission guides, and the compression API proposal and plan. The shared Docs package provides the page shell and navigation; this repository keeps its assessment-specific flow diagrams and badge components.
 
 ## C program scaffold
 
