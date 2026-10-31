@@ -11,7 +11,7 @@ pnpm install
 pnpm docs:dev
 ```
 
-Build the static site into `docs-dist/`:
+Build the static site into `dist/docs/`:
 
 ```sh
 pnpm docs:build

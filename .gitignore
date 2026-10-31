@@ -60,7 +60,6 @@ dkms.conf
 node_modules/
 dist/
 .astro/
-docs-dist/
 .terra-docs/
 
 .DS_Store
