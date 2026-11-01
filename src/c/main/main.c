@@ -10,7 +10,7 @@ IMPORTS
 #include <stdlib.h>
 #include <string.h>
 
-#include "../encryption/cipher.h"
+#include "../encryption/encryption.h"
 #include "../compression/compression.h"
 #include "../login/login.h"
 
