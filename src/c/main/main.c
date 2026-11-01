@@ -77,8 +77,8 @@ MENU DISPLAY
 static int showMainMenu(void) {
     // SHOW THE TOP-LEVEL COMPRESSION ACTIONS
     puts("\n=== Compression stub ===");
-    puts("1. Compress file");
-    puts("2. Decompress file");
+    puts("1. Compress & encrypt file");
+    puts("2. Decompress & decrypt file");
     puts("3. Exit");
 
     // READ THE SELECTION
