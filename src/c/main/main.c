@@ -11,6 +11,7 @@ IMPORTS
 #include <string.h>
 
 #include "../compression/compression.h"
+#include "../login/login.h"
 
 /*//////////////////////////////////////////////////
 MENU INPUT
@@ -92,60 +93,61 @@ APPLICATION ENTRY POINT
  * @return Zero after the demo menu closes.
  */
 int main(void) {
-    int selection;
-    char inputPath[512];
-    char outputPath[512];
-
-    // INTRODUCE THE DEMO
-    puts("Compression program stub");
-
-    // KEEP DISPATCHING MENU CHOICES UNTIL EXIT OR EOF
-    do {
-        selection = showMainMenu();
-
-        // ROUTE EACH ACTION TO ITS FILE-LEVEL COMPRESSION FLOW
-        switch (selection) {
-        case 1: {
-            int pathStatus = readPath("Input path (PDF or image): ", inputPath, sizeof(inputPath));
-            if (pathStatus < 0) {
-                selection = -1;
+    if (loginFunction == 0) {
+        int selection;
+        char inputPath[512];
+        char outputPath[512];
+    
+        // INTRODUCE THE DEMO
+        puts("Compression program stub");
+    
+        // KEEP DISPATCHING MENU CHOICES UNTIL EXIT OR EOF
+        do {
+            selection = showMainMenu();
+    
+            // ROUTE EACH ACTION TO ITS FILE-LEVEL COMPRESSION FLOW
+            switch (selection) {
+            case 1: {
+                int pathStatus = readPath("Input path (PDF or image): ", inputPath, sizeof(inputPath));
+                if (pathStatus < 0) {
+                    selection = -1;
+                    break;
+                }
+                if (pathStatus == 0)
+                    break;
+    
+                pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
+                if (pathStatus < 0) {
+                    selection = -1;
+                    break;
+                }
+                if (pathStatus == 1)
+                    compressFile(inputPath, outputPath);
                 break;
             }
-            if (pathStatus == 0)
-                break;
-
-            pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
-            if (pathStatus < 0) {
-                selection = -1;
-                break;
-            }
-            if (pathStatus == 1)
-                compressFile(inputPath, outputPath);
-            break;
-        }
-        case 2: {
-            int pathStatus = readPath("Input path: ", inputPath, sizeof(inputPath));
-            if (pathStatus < 0) {
-                selection = -1;
-                break;
-            }
-            if (pathStatus == 0)
-                break;
-
-            pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
-            if (pathStatus < 0) {
-                selection = -1;
+            case 2: {
+                int pathStatus = readPath("Input path: ", inputPath, sizeof(inputPath));
+                if (pathStatus < 0) {
+                    selection = -1;
+                    break;
+                }
+                if (pathStatus == 0)
+                    break;
+    
+                pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
+                if (pathStatus < 0) {
+                    selection = -1;
+                    break;
+                }
+                if (pathStatus == 1)
+                    decompressFile(inputPath, outputPath);
                 break;
             }
-            if (pathStatus == 1)
-                decompressFile(inputPath, outputPath);
-            break;
-        }
-        default:
-            break;
-        }
-    } while (selection != 3 && selection != -1);
-
+            default:
+                break;
+            }
+        } while (selection != 3 && selection != -1);
+    }
     // CLOSE THE MENU SESSION
     puts("Done.");
     return 0;
