@@ -1,4 +1,4 @@
-#include "cipher.h"
+#include "encryption.h"
 
 int initCipher(streamcipher_t *cipher, unsigned long long key) {
     if (cipher == NULL || key == 0) {
