@@ -1,0 +1,11 @@
+{
+	"sourceRoots": ["src/c"],
+	"extensions": [],
+	"languageProfiles": ["c"],
+	"enabledChecks": {
+		"lint": false,
+		"knip": false,
+		"dead-code": false
+	},
+	"qualityCommands": [{ "name": "compression-build", "command": "make" }]
+}

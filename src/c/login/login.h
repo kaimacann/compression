@@ -1,24 +1,47 @@
 #ifndef LOGIN_H
 #define LOGIN_H
 
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+
+/*LOGIN SECURITY (Marceline) 
+* --------------------------*/
+
 #define ACCOUNT_FILE ".login"
+#define MAX_ACCOUNTS 100
+#define CREDENTIAL_LENGTH 51
 
-/* LOGIN — educational local-account interface. */
+/*This function checks if the hidden password file exists and is not empty.
+* If it does not exist or is empty, the program is being run for the first time and the user must create an account.
+* Output:
+* - 1 for failure
+* - 0 for success
+*/
 
-int loginScreen(char *username);
-/**
- * Create an account for username using password and write its verifier to
- * ACCOUNT_FILE. Returns 0 on success and 1 on failure. Never store plaintext
- * passwords. With only the permitted standard C libraries, a secure password
- * hashing/KDF is unavailable; any in-project verifier is educational only.
- */
-int createAccount(const char *username, const char *password);
+int loadCredentials(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials);
 
-/**
- * Check username and password against ACCOUNT_FILE. Returns 0 when accepted
- * and 1 when rejected or an error occurs. Do not claim production-grade
- * authentication when using a home-grown verifier.
- */
-int authenticateUser(const char *username, const char *password);
+/*This function creates a user after checking if the program is run for the first time via the loadCredentials function.
+* This function gets user input for a username and password.
+* It then encrypts this input using a hash function and writes it to the hidden password file.
+* Output:
+* - 1 for failure
+* - 0 for success
+*/
+int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials);
 
-#endif /* LOGIN_H */
+/*This is the password function which checks if the username password is correct.
+* Output:
+* - 1 for failure
+* - 0 for success
+*/
+int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentials);
+
+/*This is the main login function.
+* Output:
+* - 1 for failure (either failure to load/create '.login' file, or failure authenticating user
+* - 0 for success
+*/
+int loginFunction(void);
+
+#endif

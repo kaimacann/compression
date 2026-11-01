@@ -1,5 +1,5 @@
 ---
-title: Compression API proposal
+title: Overview
 description: "Technical design for a separate compression API supporting Terra Symposium assets."
 ---
 

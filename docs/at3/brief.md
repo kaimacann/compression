@@ -1,5 +1,5 @@
 ---
-title: Description
+title: Brief
 description: The project brief, development process, checkpoints, and example projects.
 ---
 
@@ -201,7 +201,7 @@ You could create your own compression and/or encryption algorithm. You could als
 
 Develop a C program that maintains a repository of images encrypted using a password. The program is capable of decrypting images correctly when the user enters the correct password. It takes a BMP image and produces an encrypted version.
 
-![Original image and encrypted image](/images/group-project-image-encryption.svg)
+![Original image and encrypted image](../images/group-project-image-encryption.svg)
 
 The program can maintain a list of recently encrypted image filenames using a queue. It can search through all files in the image repository, allowing the user to enter part of a filename and search for matching files.
 
