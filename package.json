@@ -4,22 +4,27 @@
   "version": "0.0.1",
   "packageManager": "pnpm@10.30.3",
   "scripts": {
-    "docs:dev": "terra-docs dev --title 'Compression' --description 'Assessment brief, submission guidance, and project proposal.'",
-    "docs:build": "terra-docs build --title 'Compression' --description 'Assessment brief, submission guidance, and project proposal.' --out dist/docs",
-    "docs:preview": "pnpm docs:build && terra-docs preview --title 'Compression' --description 'Assessment brief, submission guidance, and project proposal.' --out dist/docs",
+    "docs:dev": "PUBLIC_TERRA_DOCS_TITLE='Compression' PUBLIC_TERRA_DOCS_DESCRIPTION='Assessment information and a practical guide to the compression repository.' pnpm exec astro dev --config astro.config.mjs",
+    "docs:build": "PUBLIC_TERRA_DOCS_TITLE='Compression' PUBLIC_TERRA_DOCS_DESCRIPTION='Assessment information and a practical guide to the compression repository.' pnpm exec astro build --config astro.config.mjs",
+    "docs:preview": "pnpm docs:build && PUBLIC_TERRA_DOCS_TITLE='Compression' PUBLIC_TERRA_DOCS_DESCRIPTION='Assessment information and a practical guide to the compression repository.' pnpm exec astro preview --config astro.config.mjs",
     "build": "pnpm docs:build",
     "preview": "pnpm docs:preview",
-    "format:markdown": "prettier --write README.md 'docs/**/*.{md,mdx}'",
+    "format:markdown": "prettier --write README.md 'docs/**/*.{md,mdx}' '!docs/assessment/assignment/brief.md'",
     "check:markdown": "prettier --check README.md 'docs/**/*.{md,mdx}'",
     "prepare": "husky",
     "changeset": "changeset",
     "version-packages": "changeset version"
   },
   "devDependencies": {
+    "@astrojs/react": "^7.1.0",
     "@changesets/cli": "^3.0.3",
-    "@terra-symposium/docs": "^0.1.74",
-    "@terra-symposium/standards-quality": "2.1.0",
+    "@terra-symposium/docs": "^0.2.0",
+    "@terra-symposium/standards-quality": "^2.1.3",
+    "@terra-symposium/styling": "0.1.34",
+    "astro": "^7.4.2",
     "husky": "^9.1.7",
-    "prettier": "^3.9.10"
+    "prettier": "^3.9.10",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }

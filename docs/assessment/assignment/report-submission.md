@@ -1,6 +1,6 @@
 ---
 title: Report submission
-description: Report upload requirements and the report assessment rubric.
+description: Report upload requirements, the assessment rubric, and a writing scaffold.
 ---
 
 ## Submit the report
@@ -16,6 +16,8 @@ By submitting, the group confirms that the work is its own, the program has been
 ## Report rubric
 
 The report contributes 15 of the assignment's 30 marks (15% of the subject grade).
+
+> **Plan from the rubric.** Use the [report writing scaffold](./report-writing-scaffold/) to turn each criterion into a section, a claim, and supporting evidence.
 
 ## Objective, scope and program features
 

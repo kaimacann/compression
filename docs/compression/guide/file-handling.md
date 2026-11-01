@@ -1,0 +1,57 @@
+---
+title: File handling
+description: TCMP framing, streaming behaviour, output safeguards, and supported input boundaries.
+---
+
+## Processing model
+
+The program processes files as byte streams. It does not infer a file format from the extension, decode images, or rewrite document structures.
+
+Compression reads the input once to count byte frequencies and again to write the selected frame. Huffman coding builds a deterministic binary tree from those counts and emits each symbol's prefix code. When the Huffman frame would not be smaller than a raw frame, the container stores the original bytes instead.
+
+Decompression validates the container header, reconstructs the tree from the stored frequency table, and restores exactly the declared number of bytes. It checks the decoded frequencies, padding bits, and end of file before reporting success.
+
+## TCMP v1 container
+
+`TCMP` is the repository's own versioned container. It is not a published or interoperable archive standard.
+
+<table>
+  <thead>
+    <tr><th>Field</th><th>Raw frame</th><th>Huffman frame</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Signature</td><td>Four bytes: <code>TCMP</code></td><td>Four bytes: <code>TCMP</code></td></tr>
+    <tr><td>Version</td><td>One byte: <code>1</code></td><td>One byte: <code>1</code></td></tr>
+    <tr><td>Method</td><td>One byte: <code>0</code></td><td>One byte: <code>1</code></td></tr>
+    <tr><td>Original size</td><td>Eight-byte unsigned big-endian value</td><td>Eight-byte unsigned big-endian value</td></tr>
+    <tr><td>Checksum</td><td>Eight-byte big-endian FNV-1a 64 checksum of the original bytes</td><td>Eight-byte big-endian FNV-1a 64 checksum of the original bytes</td></tr>
+    <tr><td>Symbol counts</td><td>None</td><td>256 eight-byte unsigned big-endian frequencies</td></tr>
+    <tr><td>Payload</td><td>Original bytes</td><td>Prefix-coded bits, most-significant bit first; the last byte is zero-padded</td></tr>
+  </tbody>
+</table>
+
+The raw frame has a 22-byte header. The Huffman frame adds a 2,048-byte frequency table, so small or incompressible files usually use the raw method. Both methods preserve the original bytes; the raw frame may increase total size by its header.
+
+:::warning[Checksum is not authentication]
+The decoder validates an FNV-1a 64 checksum of the original bytes. It can detect accidental changes, but it is not cryptographic authentication and cannot protect against deliberate tampering. Keep independent copies of important data and do not use this format as a backup or transfer standard.
+:::
+
+## File safety and resource use
+
+The source is opened in binary read mode and is never modified. The program refuses to create an output if the destination already exists; use a new path for each operation. Output creation uses C11 exclusive-create mode, so an existing path is never replaced.
+
+Input and output are streamed through a fixed-size buffer, with a 256-entry frequency table and bounded Huffman tree. The program does not load the complete file into memory. Compression requires a seekable input because it scans the file twice. On a detected write or decode failure, the program removes the incomplete output and reports if removal fails.
+
+No format-specific metadata is preserved because the executable treats the input as opaque bytes. Search also scans literal bytes; it does not decompress a `TCMP` container or search document semantics.
+
+## Search and inspection
+
+`inspect <file>` counts all byte values, then uses merge sort to display the ten most frequent values. This is a byte histogram, not image or document classification.
+
+`search <file> <literal-text>` builds a Knuth–Morris–Pratt prefix table and scans the file without loading it in memory. It reports zero-based byte offsets for up to the first 20 matches and the total match count. The pattern comes from one command-line argument, so quote it when it contains spaces.
+
+## Security and implementation boundary
+
+The program performs lossless compression only. It does not encrypt content, authenticate users, store passwords, protect data at rest, or provide an API or hosted review interface. The separate `src/c/encryption/` code is excluded from the executable and describes its educational XOR stream as insecure; do not use it for sensitive data.
+
+The authored business and technical specifications describe proposals that require further scope and dependency decisions. They do not mean this CLI implements image optimisation, PDF rewriting, storage services, encryption, or an API.

@@ -1,0 +1,72 @@
+---
+import { DocsLocalWorkspace } from '@terra-symposium/docs';
+import type { DocsHostTreeNode } from '@terra-symposium/docs';
+import { docs } from '../lib/docs-pages.js';
+import '@terra-symposium/docs/style.css';
+
+const sections = [
+	{
+		title: 'Assessment', id: 'assessment', groups: [
+			{
+				title: 'Assignment', id: 'assignment', pages: [
+					{ title: 'Assignment overview and project brief', href: '/assessment/assignment/' },
+					{ title: 'Code submission', href: '/assessment/assignment/code-submission/' },
+					{ title: 'Report submission', href: '/assessment/assignment/report-submission/' },
+					{ title: 'Report writing scaffold', href: '/assessment/assignment/report-writing-scaffold/' },
+				],
+			},
+			{
+				title: 'Project specifications', id: 'project-specifications', pages: [
+					{ title: 'Business specification', href: '/assessment/project-specifications/business/' },
+					{ title: 'Technical proposal', href: '/assessment/project-specifications/technical/' },
+				],
+			},
+		],
+	},
+	{
+		title: 'Compression', id: 'compression', groups: [
+			{
+				title: 'Guide', id: 'guide', pages: [
+					{ title: 'Get started', href: '/compression/' },
+					{ title: 'File handling', href: '/compression/guide/file-handling/' },
+					{ title: 'Reference and troubleshooting', href: '/compression/guide/reference/' },
+					{ title: 'Processing flow diagram', href: '/compression/guide/flowchart-export/' },
+				],
+			},
+		],
+	},
+];
+
+export async function getStaticPaths() {
+	return docs.map(page => ({
+		params: { slug: page.id === 'index' ? undefined : page.id },
+		props: { page },
+	}));
+}
+
+const tree: DocsHostTreeNode[] = sections.map(section => ({
+	type: 'branch', origName: section.id, title: section.title, path: section.id,
+	children: section.groups.map(group => ({
+		type: 'branch' as const, origName: `${section.id}/${group.id}`, title: group.title, path: `${section.id}/${group.id}`,
+		children: group.pages.flatMap(item => {
+			const page = docs.find(entry => entry.pathname === item.href);
+			return page ? [{ type: 'leaf' as const, origName: page.id, title: item.title, path: page.path, url: page.pathname, permission: 'read' as const }] : [];
+		}),
+	})),
+}));
+const currentPath = Astro.url.pathname;
+const siteDescription = 'Assessment information and a practical guide to the compression repository.';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<meta name="description" content={siteDescription} />
+		<title>Compression project documentation</title>
+	</head>
+	<body>
+		<DocsLocalWorkspace client:load tree={tree} pages={docs} pathname={currentPath} title="Compression" description={siteDescription} rootPath="/" homePath="/" />
+	</body>
+</html>

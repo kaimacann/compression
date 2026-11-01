@@ -1,9 +1,9 @@
 ---
-title: Overview
-description: "Technical design for a separate compression API supporting Terra Symposium assets."
+title: Business specification
+description: Business case, proposed scope, stakeholders, and acceptance considerations for an asset-processing service.
 ---
 
-> **Status:** Proposal for in-class review. Authored here; not part of the official Canvas specification.
+> **Proposal status.** This authored business specification is a proposal for review. It is separate from the official assignment requirements and the current repository guide.
 
 ## 1. Objective
 
@@ -67,7 +67,7 @@ Terra needs a stable upload boundary for documentation and images. The API must 
 
 | Excluded             | Boundary                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------ |
-| Platform replacement | Replacing Terra content storage; general-purpose CDN, DAM, or image editor.          |
+| Platform replacement | Replacing Content storage; general-purpose CDN, DAM, or image editor.                |
 | Unsupported media    | Video, audio, animation, OCR, or generative image analysis; silent lossy conversion. |
 | Production services  | Public multi-tenant access or production SLA; accounts or billing.                   |
 | Additional controls  | Malware scanning or enterprise retention policy unless hosting requires them.        |
