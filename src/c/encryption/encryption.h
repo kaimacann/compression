@@ -1,5 +1,5 @@
-#ifndef CIPHER_H
-#define CIPHER_H
+#ifndef ENCYRPTION_H
+#define ENCRYPTION_H
 
 #include<stdio.h>
 
@@ -8,6 +8,7 @@
 
 /*Standard Multiplier for xorshift64*/
 #define PRNG_MULTIPLIER 0x2545F4914F6CDD1DULL
+#define KEY 39573927147483ULL
 
 struct streamcipher {
     unsigned long long state;
