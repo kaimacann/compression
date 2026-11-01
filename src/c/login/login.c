@@ -21,8 +21,6 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
 
         (*num_credentials)++;
 
-        //hash function here
-
         int i = 0;
         for (i; i < *num_credentials; i++) {
             int j = 0;
@@ -36,6 +34,7 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
         return 0; // Success: account created.
     } else {
         printf("Unable to create new account: Max accounts reached.");
+        return 1;
     }
 }
 
@@ -100,7 +99,7 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
     }
 }
 
-int loginScreen() {
+int main() {
     char credentials[MAX_ACCOUNTS][2][CREDENTIAL_LENGTH]; // Creates 3D array to hold usernames and passwords.
     int num_credentials = 0;
     if (loadCredentials(credentials, &num_credentials) != 0) {
@@ -108,10 +107,11 @@ int loginScreen() {
         return 1; // Failure
     }
 
-    if (authenticateUser(credentials, num_credentials) == 1) {
-        printf("Exiting program.\n");
-        return 1; //Failure
+    if (authenticateUser(credentials, num_credentials) == 0) {
+        printf("Logged in successfully.");
     }
+    
+    printf("Exiting program.\n");
 
     return 0; // Success
 }
