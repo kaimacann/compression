@@ -1,5 +1,5 @@
 ---
-title: Compression project
+title: Compression
 description: Assessment summary and project documentation.
 ---
 

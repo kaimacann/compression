@@ -64,3 +64,4 @@ dist/
 
 .DS_Store
 vendor/
+output/*
