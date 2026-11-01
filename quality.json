@@ -1,5 +1,9 @@
 {
-	"sourceRoots": ["src/c"],
+	"sourceRoots": [
+		"src/c/compression",
+		"src/c/fileIO/fileOutput/fileOutput.c",
+		"src/c/main"
+	],
 	"extensions": [],
 	"languageProfiles": ["c"],
 	"enabledChecks": {

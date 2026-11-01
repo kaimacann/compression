@@ -1,4 +1,4 @@
-# Compression Project Docs
+# Compression
 
 Assessment documentation built from root Markdown files with the shared `@terra-symposium/docs` site.
 

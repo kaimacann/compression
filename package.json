@@ -4,9 +4,9 @@
   "version": "0.0.1",
   "packageManager": "pnpm@10.30.3",
   "scripts": {
-    "docs:dev": "terra-docs dev --title 'Compression Project' --description 'Assessment brief, submission guidance, and project proposal.'",
-    "docs:build": "terra-docs build --title 'Compression Project' --description 'Assessment brief, submission guidance, and project proposal.' --out dist/docs",
-    "docs:preview": "pnpm docs:build && terra-docs preview --title 'Compression Project' --description 'Assessment brief, submission guidance, and project proposal.' --out dist/docs",
+    "docs:dev": "terra-docs dev --title 'Compression' --description 'Assessment brief, submission guidance, and project proposal.'",
+    "docs:build": "terra-docs build --title 'Compression' --description 'Assessment brief, submission guidance, and project proposal.' --out dist/docs",
+    "docs:preview": "pnpm docs:build && terra-docs preview --title 'Compression' --description 'Assessment brief, submission guidance, and project proposal.' --out dist/docs",
     "build": "pnpm docs:build",
     "preview": "pnpm docs:preview",
     "format:markdown": "prettier --write README.md 'docs/**/*.{md,mdx}'",
