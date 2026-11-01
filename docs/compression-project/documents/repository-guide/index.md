@@ -14,7 +14,7 @@ Non-PDF files are handled as bytes in a reversible `CRL1` container. PDFs use a 
 The menu calls one file operation. Each operation reads the input once, selects a path from its extension, then writes one output.
 
 <Nodes
-  nodes={`[
+nodes={`[
     {"id":"menu","type":"origin","data":{"title":"main() menu"}},
     {"id":"operation","type":"process","data":{"title":"compressFile / decompressFile"}},
     {"id":"read","type":"data","data":{"title":"readInputFile · whole file"}},
@@ -24,7 +24,7 @@ The menu calls one file operation. Each operation reads the input once, selects 
     {"id":"write","type":"process","data":{"title":"writeOutputFile · once"}},
     {"id":"done","type":"terminal","data":{"title":"Output file"}}
   ]`}
-  edges={`[
+edges={`[
     {"id":"e1","source":"menu","target":"operation"},
     {"id":"e2","source":"operation","target":"read"},
     {"id":"e3","source":"read","target":"route"},
@@ -34,8 +34,8 @@ The menu calls one file operation. Each operation reads the input once, selects 
     {"id":"e7","source":"container","target":"write"},
     {"id":"e8","source":"write","target":"done"}
   ]`}
-  direction="TB"
-  height={560}
+direction="TB"
+height={560}
 />
 
 ## Choose a page
