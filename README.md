@@ -1,27 +1,32 @@
-# Compression Project Docs
+# Compression project
 
-Assessment documentation built from root Markdown files with the shared `@terra-symposium/docs` site.
+This repository contains a C11 command-line compression demo and a Markdown documentation site for the assessment and project proposals. The [repository guide](docs/compression-project/documents/repository-guide.md) describes how the current code works and includes copyable workflows.
 
-## Local development
+## Quick start
 
-Install dependencies and start the local documentation site:
+You need a C11 compiler available as `cc` and `make`.
+
+```sh
+make
+./compression-demo
+```
+
+Or build and launch the interactive menu with `make run`. Choose **1** to compress a file, **2** to decompress one, or **3** to exit. Use separate input and output paths; identical path strings are rejected.
+
+## Choose the output extension
+
+- Use a `.pdf` output path when compressing a PDF. The decompressor uses the extension to choose its PDF restoration path.
+- Use a non-PDF extension such as `.crl` for other files. Text and image files are wrapped as bytes; image pixels are not decoded or recompressed.
+
+The sample inputs are in [`samples/`](samples/). The guide explains supported formats, limitations, round-trip commands, the public C API, and documentation workflows.
+
+## Documentation site
+
+Install the Node dependencies, then start the local site:
 
 ```sh
 pnpm install
 pnpm docs:dev
 ```
 
-Build the static site into `dist/docs/`:
-
-```sh
-pnpm docs:build
-pnpm docs:preview
-```
-
-The six authored pages live in the root `docs/` folder: the official assessment brief, code and report submission guides, and the compression API proposal and plan. The Docs package supplies routes, 404, reader layout, styling, navigation, and search from those files. Add `.md` or `.mdx` pages to extend the site.
-
-## C program scaffold
-
-Build the C compression stub with `make`, then run it with `./compression-demo` or `make run`. Choose compression or decompression and enter input and output paths. Compression recognizes PDFs and image files by extension. The PDF flow reaches parsing, image-object discovery (one placeholder object), per-image compression, replacement, serialization, and file-output stubs. Image inputs reach decoding and raster mode by default; the strokes-mode branch is also stubbed. These stages do not modify or create output data yet. The menu wrappers read paths and route to the stub APIs declared in `src/c/compression/compression.h`.
-
-Sample inputs are in `samples/`: `sample.txt`, `bald.png`, and `duck.png`.
+Build the static site with `pnpm docs:build` or build and preview it with `pnpm docs:preview`.

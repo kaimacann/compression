@@ -1,5 +1,5 @@
 PROJECT_NAME           = "Compression demo"
-PROJECT_BRIEF          = "Documented C stub call flow"
+PROJECT_BRIEF          = "Reversible byte compression and conservative PDF image-stream RLE"
 OUTPUT_DIRECTORY       = build/doxygen
 INPUT                  = src/c
 RECURSIVE              = YES
