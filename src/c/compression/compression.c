@@ -1,4 +1,7 @@
 /**
+ * @file compression.c
+ * @brief Stub implementation of the documented compression call flow.
+ *
  * @code
  * main()
  * +-- showMainMenu()
@@ -29,47 +32,68 @@ IMPORTS
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "compression.h"
 #include "../fileIO/fileInput/fileInput.h"
 #include "../fileIO/fileOutput/fileOutput.h"
+#include "compression.h"
 
 /*//////////////////////////////////////////////////
 PRIVATE FLOW TYPES
 //////////////////////////////////////////////////*/
 
+/** File categories used by the placeholder input dispatcher. */
 enum { INPUT_DOCUMENT = 'd', INPUT_PDF = 'p', INPUT_IMAGE = 'i', INPUT_OTHER = 'o' };
+/** Image processing modes; raster and strokes are modes of image input. */
 enum { IMAGE_MODE_RASTER, IMAGE_MODE_STROKES };
 
+/** Bytes and detected kind passed through the internal compression flow. */
 struct CompressionInput {
+    /** Borrowed or owned input data passed through the flow. */
     const unsigned char *data;
+    /** Number of bytes available through data. */
     size_t dataSize;
+    /** Detected source kind used by the dispatcher. */
     char type;
 };
 
+/** Compression policy selected for the current menu flow. */
 struct CompressionPolicy {
+    /** Selected image processing mode. */
     int imageMode;
+    /** Whether the selected flow may use a lossy encoder. */
     int allowLossy;
 };
 
+/** Parsed-PDF placeholder retaining the original input reference. */
 struct ParsedPdf {
+    /** Original PDF input retained by the parser stub. */
     const CompressionInput *source;
 };
 
+/** Placeholder reference to one image XObject and its image stream. */
 struct PdfImageObject {
+    /** Placeholder object number in the PDF. */
     size_t objectNumber;
+    /** Encoded stream associated with this image object. */
     const CompressionInput *imageStream;
 };
 
+/** Fixed-size placeholder collection of image references. */
 struct PdfImageXObjectList {
+    /** Placeholder image object references. */
     const PdfImageObject *items[1];
+    /** Number of valid entries in items. */
     size_t count;
 };
 
+/** Replacement metadata retained for one PDF image candidate. */
 struct PdfImageCandidate {
+    /** Object number that the candidate would replace. */
     size_t objectNumber;
 };
 
+/** Decoded-image placeholder retaining its encoded source. */
 struct DecodedImage {
+    /** Encoded source retained by the image decoder stub. */
     const CompressionInput *source;
 };
 
@@ -77,15 +101,24 @@ struct DecodedImage {
 PLACEHOLDER FLOW DATA
 //////////////////////////////////////////////////*/
 
+/** Empty image stream used by the PDF flow stub. */
 static const CompressionInput placeholderPdfImageStream = {NULL, 0, INPUT_IMAGE};
+/** One placeholder PDF image object used until PDF parsing is implemented. */
 static const PdfImageObject placeholderPdfImage = {1, &placeholderPdfImageStream};
+/** Placeholder XObject list returned by the image-discovery stub. */
 static PdfImageXObjectList placeholderPdfImages = {{&placeholderPdfImage}, 1};
+/** Default raster policy used by the demo menu. */
 static const CompressionPolicy defaultCompressionPolicy = {IMAGE_MODE_RASTER, 0};
 
 /*//////////////////////////////////////////////////
 PRIVATE FLOW HELPERS
 //////////////////////////////////////////////////*/
 
+/** Parses PDF input into the placeholder document representation.
+ * @param documentBytes Input bytes classified as PDF.
+ * @param parsedPdf Output placeholder for the parsed PDF.
+ * @return Non-zero when the input is accepted by the stub parser.
+ */
 static int parsePdfDocument(const CompressionInput *documentBytes, ParsedPdf *parsedPdf) {
     if (documentBytes == NULL || parsedPdf == NULL || documentBytes->type != INPUT_PDF)
         return 0;
@@ -96,6 +129,11 @@ static int parsePdfDocument(const CompressionInput *documentBytes, ParsedPdf *pa
     return 1;
 }
 
+/** Creates the placeholder decoded-image view for an encoded image.
+ * @param encodedImage Encoded image bytes and detected type.
+ * @param decodedImage Output placeholder for decoded image data.
+ * @return Non-zero when the input and output are valid.
+ */
 static int decodeImageInput(const CompressionInput *encodedImage, DecodedImage *decodedImage) {
     if (encodedImage == NULL || decodedImage == NULL)
         return 0;
@@ -106,8 +144,14 @@ static int decodeImageInput(const CompressionInput *encodedImage, DecodedImage *
     return 1;
 }
 
+/** Applies a candidate image replacement to the placeholder PDF.
+ * @param parsedPdf Parsed PDF to update.
+ * @param imageObject Image object being replaced.
+ * @param candidate Encoded image candidate to install.
+ * @return Non-zero when replacement succeeds; the stub always returns zero.
+ */
 static int replacePdfImageXObject(ParsedPdf *parsedPdf, const PdfImageObject *imageObject,
-                                 const PdfImageCandidate *candidate) {
+                                  const PdfImageCandidate *candidate) {
     (void)parsedPdf;
     (void)imageObject;
     (void)candidate;
@@ -116,6 +160,10 @@ static int replacePdfImageXObject(ParsedPdf *parsedPdf, const PdfImageObject *im
     return 0;
 }
 
+/** Serializes the placeholder edited PDF.
+ * @param parsedPdf Parsed PDF representation to serialize.
+ * @return Non-zero when serialization succeeds; the stub always returns zero.
+ */
 static int serializePdfDocument(const ParsedPdf *parsedPdf) {
     (void)parsedPdf;
     puts("PDF serialization reached (stub).");
@@ -123,6 +171,10 @@ static int serializePdfDocument(const ParsedPdf *parsedPdf) {
     return 0;
 }
 
+/** Routes one loaded input to its document, image, or byte-compression flow.
+ * @param input Loaded bytes and detected input type.
+ * @param policy Compression mode and permitted transformations.
+ */
 static void compress(const CompressionInput *input, const CompressionPolicy *policy) {
     if (input == NULL || policy == NULL)
         return;
@@ -139,6 +191,9 @@ static void compress(const CompressionInput *input, const CompressionPolicy *pol
     }
 }
 
+/** Routes one loaded input to the matching document, image, or byte decoder.
+ * @param input Encoded bytes and detected input type.
+ */
 static void decompressInput(const CompressionInput *input) {
     if (input == NULL)
         return;
@@ -157,6 +212,11 @@ COMPRESSION FLOWS
 //////////////////////////////////////////////////*/
 
 /* MENU-DRIVEN FILE FLOWS */
+/** Runs the file-level compression flow using file I/O and compression stubs.
+ * @param inputPath Source file path.
+ * @param outputPath Destination path for the compressed result.
+ * @return Zero while the demo implementation remains a stub.
+ */
 int compressFile(const char *inputPath, const char *outputPath) {
     file_t inputFile = {0};
     CompressionInput input;
@@ -186,6 +246,11 @@ int compressFile(const char *inputPath, const char *outputPath) {
     return 0;
 }
 
+/** Runs the file-level decompression flow using file I/O and decoder stubs.
+ * @param inputPath Encoded source file path.
+ * @param outputPath Destination path for the restored result.
+ * @return Zero while the demo implementation remains a stub.
+ */
 int decompressFile(const char *inputPath, const char *outputPath) {
     file_t inputFile = {0};
     CompressionInput input;
@@ -217,6 +282,10 @@ PDF
 //////////////////////////////////////////////////*/
 
 /* PDF IMAGE OBJECTS */
+/** Returns the placeholder list of image XObjects from the parsed PDF.
+ * @param parsedPdf Parsed PDF document.
+ * @return The placeholder image list, or NULL when the document is invalid.
+ */
 PdfImageXObjectList *collectPdfImageXObjects(const ParsedPdf *parsedPdf) {
     if (parsedPdf == NULL || parsedPdf->source == NULL)
         return NULL;
@@ -226,6 +295,11 @@ PdfImageXObjectList *collectPdfImageXObjects(const ParsedPdf *parsedPdf) {
     return &placeholderPdfImages;
 }
 
+/** Processes one PDF image object into a placeholder replacement candidate.
+ * @param parsedPdf Parsed PDF containing the image.
+ * @param imageObject Image object selected for processing.
+ * @return Candidate metadata, or NULL when either input is invalid.
+ */
 PdfImageCandidate *processPdfImageXObject(const ParsedPdf *parsedPdf,
                                           const PdfImageObject *imageObject) {
     static PdfImageCandidate candidate;
@@ -245,6 +319,11 @@ RESULTS
 //////////////////////////////////////////////////*/
 
 /* DOCUMENT PROCESSING */
+/** Decodes document bytes through the generic decoder stub.
+ * @param encodedBytes Encoded document bytes.
+ * @param codec Codec that matches the encoded document.
+ * @return Decoded result, or NULL while the function is a stub.
+ */
 DocumentDecodeResult *decompressDocument(const CompressionInput *encodedBytes,
                                          const CompressionCodec *codec) {
     (void)codec;
@@ -253,6 +332,11 @@ DocumentDecodeResult *decompressDocument(const CompressionInput *encodedBytes,
     return NULL;
 }
 
+/** Processes PDF image streams and prepares a placeholder document result.
+ * @param documentBytes Source document bytes.
+ * @param policy Compression mode and permitted transformations.
+ * @return Compressed document candidate, or NULL while the function is a stub.
+ */
 DocumentCompressionResult *compressDocument(const CompressionInput *documentBytes,
                                             const CompressionPolicy *policy) {
     ParsedPdf parsedPdf = {0};
@@ -286,6 +370,11 @@ DocumentCompressionResult *compressDocument(const CompressionInput *documentByte
 }
 
 /* RASTER IMAGE PROCESSING */
+/** Dispatches decoded image data to the selected raster or strokes mode.
+ * @param decodedImage Decoded image samples and metadata.
+ * @param policy Image mode and permitted transformations.
+ * @return Compressed image candidate, or NULL while the function is a stub.
+ */
 ImageCompressionResult *compressImage(const DecodedImage *decodedImage,
                                       const CompressionPolicy *policy) {
     if (decodedImage == NULL || policy == NULL)
@@ -305,6 +394,11 @@ ImageCompressionResult *compressImage(const DecodedImage *decodedImage,
     return NULL;
 }
 
+/** Encodes classified colour samples without changing their values.
+ * @param image Decoded image samples and metadata.
+ * @param classification Validated image classification.
+ * @return Encoded candidate, or NULL while the function is a stub.
+ */
 EncodedImageCandidate *encodeClassifiedColorData(const DecodedImage *image,
                                                  const ImageClassification *classification) {
     (void)image;
@@ -314,6 +408,11 @@ EncodedImageCandidate *encodeClassifiedColorData(const DecodedImage *image,
     return NULL;
 }
 
+/** Encodes a repeated background region losslessly.
+ * @param image Decoded image samples and metadata.
+ * @param classification Validated background classification.
+ * @return Encoded candidate, or NULL while the function is a stub.
+ */
 EncodedImageCandidate *encodeClassifiedBackground(const DecodedImage *image,
                                                   const ImageClassification *classification) {
     (void)image;
@@ -323,6 +422,12 @@ EncodedImageCandidate *encodeClassifiedBackground(const DecodedImage *image,
     return NULL;
 }
 
+/** Decodes image bytes through the generic decoder stub.
+ * @param encodedBytes Encoded image bytes.
+ * @param format Format of the encoded image.
+ * @param codec Codec matching the encoded image.
+ * @return Decoded image result, or NULL while the function is a stub.
+ */
 ImageDecodeResult *decompressImage(const CompressionInput *encodedBytes, const ImageFormat *format,
                                    const CompressionCodec *codec) {
     (void)format;
@@ -337,6 +442,12 @@ COMPRESSED
 //////////////////////////////////////////////////*/
 
 /* BYTE AND VECTOR CODECS */
+/** Builds a reversible candidate from the provided input bytes.
+ * @param input Input bytes or samples.
+ * @param algorithm Compression algorithm to use.
+ * @param options Codec-specific parameters.
+ * @return Lossless candidate, or NULL while the function is a stub.
+ */
 LosslessCompressionResult *losslessCompress(const CompressionInput *input,
                                             const CompressionAlgorithm *algorithm,
                                             const CodecOptions *options) {
@@ -348,6 +459,12 @@ LosslessCompressionResult *losslessCompress(const CompressionInput *input,
     return NULL;
 }
 
+/** Builds an image candidate using an explicitly lossy profile.
+ * @param imageSamples Decoded image samples.
+ * @param targetFormat Format for the encoded candidate.
+ * @param profile Lossy quality and size settings.
+ * @return Lossy candidate, or NULL while the function is a stub.
+ */
 LossyCompressionResult *lossyCompress(const DecodedImage *imageSamples,
                                       const ImageFormat *targetFormat,
                                       const LossyProfile *profile) {
@@ -359,6 +476,11 @@ LossyCompressionResult *lossyCompress(const DecodedImage *imageSamples,
     return NULL;
 }
 
+/** Serializes validated stroke geometry as SVG.
+ * @param strokeGeometry Vector stroke geometry.
+ * @param options SVG serialization options.
+ * @return SVG candidate, or NULL while the function is a stub.
+ */
 SvgSerializationResult *svgise(const StrokeGeometry *strokeGeometry, const SvgOptions *options) {
     (void)strokeGeometry;
     (void)options;
@@ -367,6 +489,12 @@ SvgSerializationResult *svgise(const StrokeGeometry *strokeGeometry, const SvgOp
     return NULL;
 }
 
+/** Decodes input bytes using the selected compression algorithm.
+ * @param compressedInput Encoded input bytes.
+ * @param algorithm Matching decompression algorithm.
+ * @param maxOutputBytes Maximum permitted decoded output length.
+ * @return Decoded result, or NULL while the function is a stub.
+ */
 DecompressionResult *decompress(const CompressionInput *compressedInput,
                                 const CompressionAlgorithm *algorithm, size_t maxOutputBytes) {
     (void)compressedInput;

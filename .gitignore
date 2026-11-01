@@ -36,6 +36,7 @@
 *.x86_64
 *.hex
 /compression-demo
+*.plist
 
 # Debug files
 *.dSYM/
@@ -59,5 +60,7 @@ dkms.conf
 node_modules/
 dist/
 .astro/
+.terra-docs/
 
 .DS_Store
+vendor/

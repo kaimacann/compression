@@ -29,4 +29,4 @@ run: compression-demo
 	./compression-demo
 
 clean:
-	rm -f compression-demo
+	rm -f compression-demo *.plist
