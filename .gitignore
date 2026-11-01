@@ -60,3 +60,7 @@ dist/
 .astro/
 
 .DS_Store
+
+/src/c/library/fileData/
+/src/c/library/fileLibraryMetadata.db
+/src/c/fileIO/fileInput/inputFileList.txt

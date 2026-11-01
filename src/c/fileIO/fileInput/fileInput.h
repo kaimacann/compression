@@ -1,3 +1,4 @@
+
 #include "../file.c"
 /**
  * Header file with function prototypes relating to file input
@@ -19,12 +20,12 @@ int selectFiles(char username[]);
 /**
  * Displays the files in a given folder location
  */
-void displayFiles(char folderAddress[]);
+void displayFiles(char availableInputFiles[100][200], int fileCount);
 
 /**
  * Creates a file from a given name
  */
-file_t createFile(char folderAddress[], char username[]);
+int createFile(file_t* fileP, char fileAddress[], char username[]);
 
 /**
  * - Displays the items in the current folder address
@@ -62,7 +63,7 @@ void inputFolderAddress(char folderAddress[]);
  * Outputs:
  * - The number of files successfully inputted.
 */
-int inputFiles(file_t fileInList[], int listLength, char username[]);
+int inputFiles(char username[]);
 
 /**
  * Generates a random string of 14 characters (to be used for fileIDs).
@@ -73,7 +74,7 @@ int inputFiles(file_t fileInList[], int listLength, char username[]);
  * Outputs:
  * - Pointer to generated string
  */
-char* generateFileId();
+void generateFileId(file_t* fileP);
 
 /**
  * Takes each file from "inputFiles" and runs them through the storage process
@@ -97,8 +98,7 @@ int handleFileInput(file_t* fileP);
  * Outputs:
  * - int for if its successful or not
  */
-int storeFile(file_t* fileP);
-
+void storeFile(file_t* fileP, file_t fileLibrary[200], int* librarySizeP);
 /**
  * writes binary data to file using the name of "<fileId>.bin"
  * 
@@ -121,3 +121,17 @@ int writeFile(file_t* fileP);
  */
 int writeMetaData(file_t* fileP);
 
+int readInputFolder(char availableInputFiles[100][200], char folderAddress[]);
+
+int selectFile(char availableInputFiles[100][200], int fileCount);
+
+void generateSeedNum(file_t* fileP);
+
+
+void storeFileBin (file_t* fileP);
+
+int isInLibrary(char* fileId, file_t fileLibrary[200], int librarySize);
+
+int initialiseFileLibrary (file_t fileLibrary[]);
+
+void saveLibrary(file_t fileLibrary[], int fileLibraryCount);
