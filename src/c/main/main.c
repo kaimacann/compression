@@ -10,6 +10,7 @@ IMPORTS
 #include <stdlib.h>
 #include <string.h>
 
+#include "../encryption/cipher.h"
 #include "../compression/compression.h"
 #include "../login/login.h"
 
@@ -123,6 +124,7 @@ int main(void) {
                 }
                 if (pathStatus == 1)
                     compressFile(inputPath, outputPath);
+                    cipher(outputPath);
                 break;
             }
             case 2: {
@@ -140,6 +142,7 @@ int main(void) {
                     break;
                 }
                 if (pathStatus == 1)
+                    cipher(inputPath);
                     decompressFile(inputPath, outputPath);
                 break;
             }
