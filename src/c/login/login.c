@@ -99,7 +99,7 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
     }
 }
 
-int main() {
+int loginFunction() {
     char credentials[MAX_ACCOUNTS][2][CREDENTIAL_LENGTH]; // Creates 3D array to hold usernames and passwords.
     int num_credentials = 0;
     if (loadCredentials(credentials, &num_credentials) != 0) {
