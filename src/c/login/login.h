@@ -35,13 +35,13 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
 * - 1 for failure
 * - 0 for success
 */
-int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentials);
+int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentials, char* name);
 
 /*This is the main login function.
 * Output:
 * - 1 for failure (either failure to load/create '.login' file, or failure authenticating user
 * - 0 for success
 */
-int loginFunction(void);
+int loginFunction(char* username);
 
 #endif

@@ -12,7 +12,7 @@ struct file {
     char name[100];
     char userName[100];
     char type; /* 'p'=PDF, 'd'=document, 'i'=image, 'o'=other */
-    unsigned char *data;
+    char *data;
     size_t dataSize;
 };
 

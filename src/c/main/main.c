@@ -6,12 +6,17 @@
 #include "../encryption/encryption.h"
 #include "../fileIO/fileInput/fileInput.h"
 #include "../fileIO/fileOutput/fileOutput.h"
+#include "../fileManagement/fileManagement.h"
 
 int main() {
     printf("Welcome to the compression script. \n\n");
-    char username[100];
-    strcpy(username, "testperson67");
-    loginScreen(username);
+    char username[100] = "";
+    if (loginFunction(username) != 0) {
+        puts("Login failed.");
+        return 0;
+    }
+    printf("%s\n", username);
+    printf("\n-----------------------------------------------------\n\n");
     
 
     int selection = 0;
@@ -30,6 +35,9 @@ int main() {
                 break;
                 
             case 2: browseFiles();
+                break;
+
+            case 3: manageLibrary();
                 break;
         }
     } while (selection != 4);

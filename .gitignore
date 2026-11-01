@@ -64,3 +64,5 @@ dist/
 /src/c/library/fileData/
 /src/c/library/fileLibraryMetadata.db
 /src/c/fileIO/fileInput/inputFileList.txt
+.login
+test

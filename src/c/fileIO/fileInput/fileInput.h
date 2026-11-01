@@ -1,5 +1,6 @@
 
 #include "../file.c"
+#include "../../fileManagement/fileManagement.h"
 /**
  * Header file with function prototypes relating to file input
  * All functions have been created, and will be implemented by Haadi Anwary - 25578814
@@ -20,25 +21,13 @@ int selectFiles(char username[]);
 /**
  * Displays the files in a given folder location
  */
-void displayFiles(char availableInputFiles[100][200], int fileCount);
+void displayFolder(char availableInputFiles[100][200], int fileCount);
 
 /**
  * Creates a file from a given name
  */
-int createFile(file_t* fileP, char fileAddress[], char username[]);
+int createFile(file_t* fileP, char fileAddress[], char username[], int fileLibraryCount);
 
-/**
- * - Displays the items in the current folder address
- * - Prompts user if they want to navigate elsewhere or if they want to select files.
- * - Default address is the directory in which the program is located
- * 
- * Inputs:
- * - current folder address
- * 
- * Outputs:
- * - may change the value of folder address
- */
-void displayFolder(char folderAddress[]);
 
 /**
  * Allows user to change the folder address they are nagivating to.
@@ -74,7 +63,7 @@ int inputFiles(char username[]);
  * Outputs:
  * - Pointer to generated string
  */
-void generateFileId(file_t* fileP);
+void generateFileId(file_t* fileP, int fileLibraryCount);
 
 /**
  * Takes each file from "inputFiles" and runs them through the storage process
@@ -125,13 +114,9 @@ int readInputFolder(char availableInputFiles[100][200], char folderAddress[]);
 
 int selectFile(char availableInputFiles[100][200], int fileCount);
 
-void generateSeedNum(file_t* fileP);
+void generateSeedNum(file_t* fileP, int fileLibraryCount);
 
 
 void storeFileBin (file_t* fileP);
 
 int isInLibrary(char* fileId, file_t fileLibrary[200], int librarySize);
-
-int initialiseFileLibrary (file_t fileLibrary[]);
-
-void saveLibrary(file_t fileLibrary[], int fileLibraryCount);

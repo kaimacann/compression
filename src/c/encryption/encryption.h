@@ -1,4 +1,4 @@
-#ifndef ENCYRPTION_H
+#ifndef ENCRYPTION_H
 #define ENCRYPTION_H
 
 #include<stdio.h>
@@ -26,7 +26,7 @@ typedef struct streamcipher streamcipher_t;
 int initCipher (streamcipher_t *cipher, unsigned long long key);
 
 /* This function performs the bitwise XOR shifts on the cipher and then the multiplier.
-/* This may also later alter the key based on the metadata to ensure a different key for each file.
+* This may also later alter the key based on the metadata to ensure a different key for each file.
 * Inputs:
 * - The cipher.
 * Output:

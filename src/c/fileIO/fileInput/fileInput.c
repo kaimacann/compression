@@ -6,16 +6,15 @@
 
 #define currentFile availableInputFiles[fileCount]
 
-/* note: will restructure all functions to make more sense later. */
 
-int inputFiles(char username[]) {
+int inputFiles(char userName[]) {
     /* read existing file library */
     file_t fileLibrary[200]; 
     int fileLibraryCount = initialiseFileLibrary(fileLibrary);
 
     /* get input folder from user */
     char folderAddress[150];
-    strcpy(folderAddress, "./src/inputFolder"); /* to build file nav */
+    strcpy(folderAddress, "./src/inputFolder");
 
     /* read files in folder into an array */
     char availableInputFiles[100][200];
@@ -31,7 +30,7 @@ int inputFiles(char username[]) {
     strcat(fileAddress, availableInputFiles[selection - 1]);
 
     file_t newFile;
-    int successful = createFile(&newFile, fileAddress, username);
+    int successful = createFile(&newFile, fileAddress, userName, fileLibraryCount);
     if (successful == 0) {
         printf("File creation error\n");
         return 0;
@@ -39,29 +38,6 @@ int inputFiles(char username[]) {
     storeFile(&newFile, fileLibrary, &fileLibraryCount);
     saveLibrary(fileLibrary, fileLibraryCount);
     return 1;
-}
-
-int initialiseFileLibrary (file_t fileLibrary[]) {
-    int fileLibraryCount = 0;
-
-	FILE* fptr = fopen("./src/c/library/fileLibraryMetadata.db", "rb");
-    if (fptr == NULL) {
-        printf("Creating new file Library\n\n");
-        return fileLibraryCount;
-    }
-    fileLibraryCount = fread(fileLibrary, sizeof(file_t), 200, fptr);
-    fclose(fptr);
-    return fileLibraryCount;
-}
-
-void saveLibrary(file_t fileLibrary[], int fileLibraryCount) {
-	FILE* fptr = fopen("./src/c/library/fileLibraryMetadata.db", "wb");
-    if (fptr == NULL) {
-        printf("Could not open input file list.\n");
-        return;
-    }
-	fwrite(fileLibrary, sizeof(file_t), fileLibraryCount, fptr);
-	fclose(fptr);
 }
 
 int readInputFolder(char availableInputFiles[100][200], char folderAddress[]) {
@@ -83,21 +59,15 @@ int readInputFolder(char availableInputFiles[100][200], char folderAddress[]) {
 
 int selectFile(char availableInputFiles[100][200], int fileCount) {
     printf("Select one of the following files:\n");
-    displayFiles(availableInputFiles, fileCount);
+    displayFolder(availableInputFiles, fileCount);
     printf("Enter the file number > ");
 
-    int selection = 0;
-    scanf("%d", &selection);
-
-    while (selection == 0) {
-        printf("\nInvalid selection.\nTry again >");
-        scanf("%d", &selection);
-    }
+    int selection = getSelection(1, fileCount);
 
     return selection;
 }
 
-void displayFiles(char availableInputFiles[100][200], int fileCount) {
+void displayFolder(char availableInputFiles[100][200], int fileCount) {
     int i;
     for (i = 0; i < fileCount; i++) {
         printf("%d. %s\n", (i + 1), availableInputFiles[i]);
@@ -107,20 +77,26 @@ void displayFiles(char availableInputFiles[100][200], int fileCount) {
 
 
 
-int createFile(file_t* fileP, char fileAddress[], char username[]) {
+int createFile(file_t* fileP, char fileAddress[], char userName[], int fileLibraryCount) {
     /* name */
-    char *fileName = (strrchr(fileAddress, '/') + 1);
+    char fileName[100] = "";
+    strcpy(fileName, (strrchr(fileAddress, '/') + 1));
     strcpy(fileP->name, fileName);
 
-    /* username */
-    strcpy(fileP->username, username);
+    /* userName */
+    strcpy(fileP->userName, userName);
 
     /* type */
-    char *fileType = (strrchr(fileName, '.') + 1);
-    strcpy(fileP->type, fileType);
+    char fileType = *(strrchr(fileName, '.') + 1);
+    if (fileType != 'p' && fileType != 'd' && fileType != 'i') {
+        fileP->type = 'o';
+    }
+    else {
+        fileP->type = fileType;
+    }
 
     /* id */
-    generateFileId(fileP);
+    generateFileId(fileP, fileLibraryCount);
 
     /* data */ 
     FILE *fptr = fopen(fileAddress, "rb"); 
@@ -150,8 +126,8 @@ int createFile(file_t* fileP, char fileAddress[], char username[]) {
 }
 
 
-void generateFileId(file_t* fileP) {
-    generateSeedNum(fileP);
+void generateFileId(file_t* fileP, int fileLibraryCount) {
+    generateSeedNum(fileP, fileLibraryCount);
 
     char characters[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     char newId[15];
@@ -165,14 +141,14 @@ void generateFileId(file_t* fileP) {
 }
 
 /* add the amount of files already in the library as a paramater for more randomness */
-void generateSeedNum(file_t* fileP) {
-    char* fileName = fileP->name;
-    char* username = fileP->username;
+void generateSeedNum(file_t* fileP, int fileLibraryCount) {
+    char fileName[400];
+    strcpy(fileName, fileP->name);
+    *(strrchr(fileName, '.')) = '\0';
 
-    int fileNameLen = strlen(fileName) - (strlen(fileP->type)+1);
-    int usernameLen = strlen(username) - (strlen(fileP->type)+1);
+    char *userName = fileP->userName;
 
-    unsigned int ranSeedNum = fileName[fileNameLen] + username[0] + fileName[0] + username[usernameLen];
+    unsigned int ranSeedNum = fileLibraryCount + fileName[strlen(fileName)-1] + userName[0] + fileName[0] + userName[strlen(userName)-1];
     srand(ranSeedNum);
 }
 
@@ -207,7 +183,7 @@ int isInLibrary(char* fileId, file_t fileLibrary[200], int librarySize) {
 void storeFileBin (file_t* fileP) {
     char fileStorageLocation[400] = "";
     strcat(fileStorageLocation, "./src/c/library/fileData/");
-    strcat(fileStorageLocation, fileP->name);
+    strcat(fileStorageLocation, fileP->id);
     FILE* fptr = fopen(fileStorageLocation, "wb");
     if (fptr == NULL) {
         printf("File Binary Store Error");

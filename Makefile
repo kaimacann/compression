@@ -1,13 +1,13 @@
 all:
-	gcc -ansi ./src/c/main/main.c ./src/c/login/login.c ./src/c/fileIO/fileInput/fileInput.c ./src/c/fileIO/fileOutput/fileOutput.c ./src/c/encryption/encryption.c ./src/c/compression/compression.c
+	gcc -ansi ./src/c/main/main.c ./src/c/login/login.c ./src/c/fileIO/fileInput/fileInput.c ./src/c/fileIO/fileOutput/fileOutput.c ./src/c/encryption/encryption.c ./src/c/compression/compression.c ./src/c/fileManagement/fileManagement.c
 
 haadi:
-	gcc -ansi ./src/c/main/main.c ./src/c/login/login.c ./src/c/fileIO/fileInput/fileInput.c ./src/c/fileIO/fileOutput/fileOutput.c -o test
+	gcc -ansi ./src/c/main/main.c ./src/c/login/login.c ./src/c/fileIO/fileInput/fileInput.c ./src/c/fileIO/fileOutput/fileOutput.c ./src/c/fileManagement/fileManagement.c -o test
 
 run:
 	./test
 
 mr:
-	gcc -ansi ./src/c/main/main.c ./src/c/login/login.c ./src/c/fileIO/fileInput/fileInput.c ./src/c/fileIO/fileOutput/fileOutput.c -o test
+	gcc -ansi ./src/c/main/main.c ./src/c/login/login.c ./src/c/fileIO/fileInput/fileInput.c ./src/c/fileIO/fileOutput/fileOutput.c ./src/c/fileManagement/fileManagement.c -o test
 	./test
 	
