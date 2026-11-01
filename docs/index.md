@@ -7,4 +7,4 @@ sidebar:
 
 # Compression project
 
-Open the [Compression project documentation section](/compression-project/) for the assessment brief, implementation guide, and project proposals.
+Open the [Compression project documentation section](/compression-project/at3/1-schedule/) for the assessment brief, implementation guide, and project proposals.

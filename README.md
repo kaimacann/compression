@@ -1,6 +1,6 @@
 # Compression project
 
-This repository contains a C11 command-line compression demo and a Markdown documentation site for the assessment and project proposals. The [repository guide](docs/compression-project/documents/repository-guide.md) describes how the current code works and includes copyable workflows.
+This repository contains a C11 command-line compression demo and a Markdown documentation site for the assessment and project proposals. The [repository guide](docs/compression-project/documents/repository-guide/index.md) describes how the current code works and includes copyable workflows.
 
 ## Quick start
 

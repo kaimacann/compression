@@ -6,7 +6,7 @@ description: Assessment resources, current implementation guide, and project pro
 Reference site for the official Canvas specification, current implementation guide, and authored compression proposals.
 
 :::note[Source of truth]
-The Canvas pages are the source of truth for requirements, dates, and marking decisions. The [repository guide](./documents/repository-guide/) describes the current C implementation. Pages under **Project docs (authored)** are design notes and proposals.
+The Canvas pages are the source of truth for requirements, dates, and marking decisions. The [repository guide](../../documents/repository-guide/) describes the current C implementation. Pages under **Project docs (authored)** are design notes and proposals.
 :::
 
 ## Documents
@@ -14,7 +14,7 @@ The Canvas pages are the source of truth for requirements, dates, and marking de
 - [Brief](./at3/brief/): Official project brief, checkpoints, requirements, and examples.
 - [Code submission](./at3/code/): Ed upload requirements and the code assessment rubric.
 - [Report submission](./at3/report/): Canvas upload requirements, page limit, and report rubric.
-- [Repository guide](./documents/repository-guide/): Build and run the current program, follow compression workflows, and understand its supported formats and limits.
+- [Repository guide](../../documents/repository-guide/): Build and run the current program, follow compression workflows, and understand its supported formats and limits.
 - [API proposal](./plan/0-overview/): Authored technical proposal for a separate Terra compression API repository.
 - [Compression plan](./plan/1-compression/): Research plan for image and PDF compression workflows.
 
