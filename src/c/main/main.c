@@ -1,10 +1,10 @@
-/*//////////////////////////////////////////////////
-IMPORTS
-//////////////////////////////////////////////////*/
-
 /** @file main.c
  * @brief Interactive compression demo menu and input handling.
  */
+
+/*//////////////////////////////////////////////////
+IMPORTS
+//////////////////////////////////////////////////*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,9 +13,10 @@ IMPORTS
 #include "../compression/compression.h"
 
 /*//////////////////////////////////////////////////
-MENU INPUT
+HELPERS
 //////////////////////////////////////////////////*/
 
+// MENU INPUT
 /** Reads and parses one numeric menu selection.
  * @param prompt Prompt written before reading input.
  * @return Parsed selection, zero for invalid input, or -1 at end of input.
@@ -24,19 +25,14 @@ static int readMenuChoice(const char *prompt) {
     char line[32];
     char *end;
     long choice;
-
-    // READ THE NEXT INPUT BUFFER; KEEP EOF DISTINCT FROM INVALID INPUT
     fputs(prompt, stdout);
     if (fgets(line, sizeof(line), stdin) == NULL)
         return -1;
-
-    // PARSE THE LEADING DECIMAL CHOICE; A NON-NUMERIC LINE IS INVALID
     choice = strtol(line, &end, 10);
     if (end == line)
         return 0;
     return (int)choice;
 }
-
 /** Reads one non-empty path into a bounded caller-provided buffer.
  * @param prompt Prompt written before reading input.
  * @param path Buffer that receives the path.
@@ -46,8 +42,6 @@ static int readMenuChoice(const char *prompt) {
 static int readPath(const char *prompt, char *path, size_t capacity) {
     size_t length;
     int ch;
-
-    // READ ONE PATH AND REMOVE ITS LINE ENDING
     fputs(prompt, stdout);
     if (fgets(path, (int)capacity, stdin) == NULL)
         return -1;
@@ -66,21 +60,15 @@ static int readPath(const char *prompt, char *path, size_t capacity) {
     return 1;
 }
 
-/*//////////////////////////////////////////////////
-MENU DISPLAY
-//////////////////////////////////////////////////*/
-
+// MENU DISPLAY
 /** Displays the top-level menu and returns the user's selection.
  * @return Parsed menu selection, zero for invalid input, or -1 at EOF.
  */
 static int showMainMenu(void) {
-    // SHOW THE TOP-LEVEL COMPRESSION ACTIONS
-    puts("\n=== Compression stub ===");
+    puts("\n=== Compression demo ===");
     puts("1. Compress file");
     puts("2. Decompress file");
     puts("3. Exit");
-
-    // READ THE SELECTION
     return readMenuChoice("Selection: ");
 }
 
@@ -95,50 +83,36 @@ int main(void) {
     int selection;
     char inputPath[512];
     char outputPath[512];
+    puts("Compression program");
 
-    // INTRODUCE THE DEMO
-    puts("Compression program stub");
-
-    // KEEP DISPATCHING MENU CHOICES UNTIL EXIT OR EOF
+    // MENU LOOP
     do {
         selection = showMainMenu();
 
-        // ROUTE EACH ACTION TO ITS FILE-LEVEL COMPRESSION FLOW
+        // HANDLE FILE REQUESTS
         switch (selection) {
-        case 1: {
-            int pathStatus = readPath("Input path (PDF or image): ", inputPath, sizeof(inputPath));
-            if (pathStatus < 0) {
-                selection = -1;
-                break;
-            }
-            if (pathStatus == 0)
-                break;
-
-            pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
-            if (pathStatus < 0) {
-                selection = -1;
-                break;
-            }
-            if (pathStatus == 1)
-                compressFile(inputPath, outputPath);
-            break;
-        }
+        case 1:
         case 2: {
+            int compressing = selection == 1;
             int pathStatus = readPath("Input path: ", inputPath, sizeof(inputPath));
+            int success;
             if (pathStatus < 0) {
                 selection = -1;
                 break;
             }
             if (pathStatus == 0)
                 break;
-
             pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
             if (pathStatus < 0) {
                 selection = -1;
                 break;
             }
-            if (pathStatus == 1)
-                decompressFile(inputPath, outputPath);
+            if (pathStatus == 1) {
+                success = compressing ? compressFile(inputPath, outputPath)
+                                      : decompressFile(inputPath, outputPath);
+                printf("%s %s.\n", compressing ? "Compression" : "Decompression",
+                       success ? "complete" : "failed");
+            }
             break;
         }
         default:
@@ -146,7 +120,7 @@ int main(void) {
         }
     } while (selection != 3 && selection != -1);
 
-    // CLOSE THE MENU SESSION
+    // REPORT EXIT
     puts("Done.");
     return 0;
 }

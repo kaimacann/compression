@@ -173,11 +173,15 @@ int handleFileOutput(file_t* file, char outputFolderAdr[]);
  */
 int readFileBinary(file_t* pointer);
 
-/* OUTPUT FILE STUB */
+/*//////////////////////////////////////////////////
+BINARY OUTPUT
+//////////////////////////////////////////////////*/
 /**
- * Placeholder for writing compression output to a destination path.
+ * Writes a complete byte buffer to a destination file.
  *
  * @param outputPath Destination path for the generated data.
+ * @param data Bytes to write; it may be NULL only when dataSize is zero.
+ * @param dataSize Number of bytes in data.
+ * @return 1 when the complete buffer is written, or 0 on invalid input or I/O failure.
  */
-void writeOutputFile(const char *outputPath);
-
+int writeOutputFile(const char *outputPath, const unsigned char *data, size_t dataSize);
