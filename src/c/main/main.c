@@ -124,7 +124,7 @@ int main(void) {
                 }
                 if (pathStatus == 1)
                     compressFile(inputPath, outputPath);
-                    cipher(outputPath);
+                    encryptFile(outputPath, KEY);
                 break;
             }
             case 2: {
@@ -142,7 +142,7 @@ int main(void) {
                     break;
                 }
                 if (pathStatus == 1)
-                    cipher(inputPath);
+                    encryptfile(inputPath, KEY);
                     decompressFile(inputPath, outputPath);
                 break;
             }
