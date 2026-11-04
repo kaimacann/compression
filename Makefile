@@ -29,7 +29,7 @@ HEADERS := \
 	src/c/fileIO/fileOutput/fileOutput.h \
 	src/c/encryption/encryption.h
 
-.PHONY: all run debug release install uninstall clean
+.PHONY: all run debug release install uninstall clean format-c format-c-check
 
 all: $(PROGRAM)
 
@@ -51,6 +51,12 @@ install: $(PROGRAM)
 
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/$(PROGRAM)"
+
+format-c:
+	clang-format --style=file:config/.clang-format -i $(shell find src/c -type f \( -name '*.c' -o -name '*.h' \))
+
+format-c-check:
+	clang-format --style=file:config/.clang-format --dry-run --Werror $(shell find src/c -type f \( -name '*.c' -o -name '*.h' \))
 
 clean:
 	rm -f $(PROGRAM) *.plist

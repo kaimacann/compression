@@ -1,27 +1,42 @@
-# Compression
+# Compression Project Docs
 
-Assessment documentation built from root Markdown files with the shared `@terra-symposium/docs` site.
+Assessment materials and a project proposal for image compression and encryption workflows. Canvas remains authoritative for course requirements, dates, and marking decisions.
 
-## Local development
+## Getting started
 
-Install dependencies and start the local documentation site:
+The Docs site requires Node.js and pnpm 10.30.3. The C demo requires a C11 compiler and Make. From the repository root:
 
 ```sh
 pnpm install
-pnpm docs:dev
+pnpm docs
+make run
 ```
 
-Build the static site into `dist/docs/`:
+`pnpm docs` starts the Docs site. `make run` builds and starts `compression-demo`.
 
-```sh
-pnpm docs:build
-pnpm docs:preview
-```
+## Commands
 
-The six authored pages live in the root `docs/` folder: the official assessment brief, code and report submission guides, and the compression API proposal and plan. The Docs package supplies routes, 404, reader layout, styling, navigation, and search from those files. Add `.md` or `.mdx` pages to extend the site.
+Run `pnpm build` to build the Docs site under `dist/docs`. Use `make` to build the C executable and `make clean` to remove it. The repository does not define an automated test script.
 
-## C program scaffold
+## Security and limitations
 
-Build the C compression stub with `make`, then run it with `./compression-demo` or `make run`. Choose compression or decompression and enter input and output paths. Compression recognizes PDFs and image files by extension. The PDF flow reaches parsing, image-object discovery (one placeholder object), per-image compression, replacement, serialization, and file-output stubs. Image inputs reach decoding and raster mode by default; the strokes-mode branch is also stubbed. These stages do not modify or create output data yet. The menu wrappers read paths and route to the stub APIs declared in `src/c/compression/compression.h`.
+The encryption demo is coursework, not a security recommendation. Review the assessment brief for the prototype's scope and limitations.
 
-Sample inputs are in `samples/`: `sample.txt`, `bald.png`, and `duck.png`.
+## Structure
+
+`docs/at3/` contains the assessment brief and submission guides. `docs/plan/` contains the compression proposal. `samples/` contains image, PDF, and text inputs; `src/c/` contains the native demo.
+
+## References
+
+- [Assessment brief](docs/at3/brief.md)
+- [Compression plan](docs/plan/0-overview.md)
+- [Build and run targets](Makefile)
+- [MIT license](LICENSE)
+
+## Contributing
+
+Keep course requirements distinct from authored proposal material. Use focused documentation edits.
+
+## Credits and license
+
+Repository files are licensed under [MIT](LICENSE), subject to third-party rights in sample assets.

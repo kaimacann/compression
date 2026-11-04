@@ -60,8 +60,9 @@ dkms.conf
 node_modules/
 dist/
 .astro/
-.terra-docs/
+dist/.docs/
 
 .DS_Store
 vendor/
 output/*
+docs/doxygen/*

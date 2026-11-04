@@ -67,7 +67,7 @@ Terra needs a stable upload boundary for documentation and images. The API must 
 
 | Excluded             | Boundary                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------ |
-| Platform replacement | Replacing Terra content storage; general-purpose CDN, DAM, or image editor.          |
+| Platform replacement | Replacing Content storage; general-purpose CDN, DAM, or image editor.                |
 | Unsupported media    | Video, audio, animation, OCR, or generative image analysis; silent lossy conversion. |
 | Production services  | Public multi-tenant access or production SLA; accounts or billing.                   |
 | Additional controls  | Malware scanning or enterprise retention policy unless hosting requires them.        |

@@ -1,4 +1,5 @@
 {
+	"root": "..",
 	"sourceRoots": ["src/c"],
 	"extensions": [],
 	"languageProfiles": ["c"],

@@ -1,7 +1,16 @@
 {
   "languages": {
     "C": {
-      "format_on_save": "on"
+      "format_on_save": "on",
+      "formatter": {
+        "external": {
+          "command": "clang-format",
+          "arguments": [
+            "--style=file:config/.clang-format",
+            "--assume-filename={buffer_path}"
+          ]
+        }
+      }
     }
   }
 }
