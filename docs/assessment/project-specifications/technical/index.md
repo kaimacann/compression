@@ -1,8 +1,9 @@
 ---
-title: Compression
-description: A format- and content-aware plan for compressing image assets and PDF documents.
-# Status: Research plan for review, not an implementation commitment. The official assessment brief and tutor decisions take precedence.
+title: Technical proposal
+description: Proposed format-aware processing policies for image assets and PDF documents.
 ---
+
+> **Proposal status.** This is a research proposal, not an implementation commitment. The assignment brief and tutor decisions take precedence. The current demo does not implement these processing policies.
 
 ## 1. Design
 

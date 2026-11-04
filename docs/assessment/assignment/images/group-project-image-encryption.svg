@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">Original image and encrypted image comparison</title>
+  <desc id="desc">Two side-by-side panels show a recognisable image pattern before encryption and a scrambled pattern after encryption.</desc>
+  <rect width="960" height="420" rx="24" fill="#f5f8fa"/>
+  <g font-family="system-ui, -apple-system, sans-serif" fill="#102a43">
+    <text x="240" y="48" text-anchor="middle" font-size="24" font-weight="700">Original image</text>
+    <text x="720" y="48" text-anchor="middle" font-size="24" font-weight="700">Encrypted image</text>
+  </g>
+  <rect x="48" y="76" width="384" height="280" rx="18" fill="#d9eef2" stroke="#5c8790" stroke-width="3"/>
+  <rect x="528" y="76" width="384" height="280" rx="18" fill="#394b59" stroke="#5c8790" stroke-width="3"/>
+  <g transform="translate(126 112)">
+    <ellipse cx="114" cy="166" rx="72" ry="92" fill="#f7fbfc" stroke="#102a43" stroke-width="8"/>
+    <circle cx="114" cy="78" r="66" fill="#1e293b"/>
+    <ellipse cx="91" cy="82" rx="15" ry="20" fill="#f7fbfc"/>
+    <ellipse cx="137" cy="82" rx="15" ry="20" fill="#f7fbfc"/>
+    <circle cx="95" cy="85" r="5" fill="#102a43"/>
+    <circle cx="133" cy="85" r="5" fill="#102a43"/>
+    <path d="M101 110h26l-13 18z" fill="#f3b545"/>
+    <ellipse cx="48" cy="260" rx="48" ry="15" fill="#f3b545"/>
+    <ellipse cx="180" cy="260" rx="48" ry="15" fill="#f3b545"/>
+  </g>
+  <g transform="translate(566 112)" opacity=".92">
+    <path d="M0 0h316v250H0z" fill="#263746"/>
+    <path d="M0 0l316 250M64 0l252 200M128 0l188 148M192 0l124 98M256 0l60 48M0 250L316 0M0 198L252 0M0 148L188 0M0 98L124 0" stroke="#8ed1d4" stroke-width="14" opacity=".52"/>
+    <g fill="#f3b545" opacity=".85">
+      <rect x="34" y="32" width="28" height="28"/>
+      <rect x="118" y="164" width="28" height="28"/>
+      <rect x="248" y="74" width="28" height="28"/>
+      <rect x="210" y="204" width="28" height="28"/>
+    </g>
+  </g>
+</svg>

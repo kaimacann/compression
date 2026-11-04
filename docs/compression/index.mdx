@@ -1,0 +1,237 @@
+---
+title: Get started
+description: Install the toolchain, build the compression program, and run a complete file round trip.
+---
+
+## Get started
+
+The repository provides a C11 command-line tool for lossless byte compression, restoration, inspection, and search. It writes the project-specific `TCMP` v1 container; it does not claim compatibility with ZIP, gzip, or another standard archive format. Continue to [File handling](./guide/file-handling/) for container and output behaviour, or [Reference and troubleshooting](./guide/reference/) for commands and diagnostics.
+
+:::warning[Data and security boundary]
+The program does not encrypt files or process PDF structures or image pixels. `TCMP` is a learning-project format, not a security, backup, or general interchange format. Keep source files and use copies for experiments.
+:::
+
+## Install the toolchain
+
+The C program uses a C11 compiler and Make. The documentation site additionally uses Node.js and pnpm.
+
+<table>
+  <thead>
+    <tr>
+      <th>Platform</th>
+      <th>Install the C toolchain</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>macOS</td>
+      <td>
+        Install Apple's Command Line Tools with{" "}
+        <code>xcode-select --install</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>Debian or Ubuntu</td>
+      <td>
+        Run <code>sudo apt-get update</code> and{" "}
+        <code>sudo apt-get install build-essential</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>Fedora</td>
+      <td>
+        Run <code>sudo dnf install gcc make</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>Arch Linux</td>
+      <td>
+        Run <code>sudo pacman -S base-devel</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>Windows</td>
+      <td>
+        Install WSL 2, then use the Linux instructions inside the distribution.
+        Native Windows builds are not configured.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+For Windows, follow [Microsoft's WSL installation instructions](https://learn.microsoft.com/windows/wsl/install). For the Docs site, install [Node.js](https://nodejs.org/en/download/) and the repository's pinned pnpm version, `10.30.3`.
+
+Confirm the tools are available in the terminal:
+
+<Code language="bash">{`cc --version
+make --version
+node --version
+pnpm --version`}</Code>
+
+## Build and install
+
+Run Make commands from the repository root. The default target compiles the C sources with C11 and warning flags; the executable is written to the repository root.
+
+<table>
+  <thead>
+    <tr>
+      <th>Command</th>
+      <th>Effect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <code>make</code>
+      </td>
+      <td>
+        Build <code>compression-demo</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>make clean &amp;&amp; make</code>
+      </td>
+      <td>Remove generated build output and rebuild.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>make debug</code>
+      </td>
+      <td>Build with debug logging, symbols, and no optimisation.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>make release</code>
+      </td>
+      <td>Build with optimisation enabled.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>make run</code>
+      </td>
+      <td>Build if needed and open the interactive menu.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>make install PREFIX="$HOME/.local"</code>
+      </td>
+      <td>
+        Install to <code>$HOME/.local/bin</code> without administrator access.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>make uninstall PREFIX="$HOME/.local"</code>
+      </td>
+      <td>Remove that user-local installation.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>make clean</code>
+      </td>
+      <td>
+        Remove the executable and root-level Clang analyzer <code>*.plist</code>{" "}
+        files.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+Add `$HOME/.local/bin` to `PATH` if the shell does not already search it. To install system-wide, use the default `/usr/local` prefix with the permissions required by your operating system.
+
+## Run a complete round trip
+
+The output paths must not already exist. A temporary directory keeps the example's outputs separate from the repository and avoids replacing files.
+
+<Code language="bash">{`work_dir=$(mktemp -d)
+./compression-demo compress samples/sample.txt "$work_dir/sample.tcmp"
+./compression-demo decompress "$work_dir/sample.tcmp" "$work_dir/sample-restored.txt"
+cmp samples/sample.txt "$work_dir/sample-restored.txt"
+rm -r "$work_dir"`}</Code>
+
+The `cmp` command prints nothing and returns success when the restored bytes are identical. For a small or incompressible input, `TCMP` may use a raw frame, which preserves the bytes but adds container overhead. The format and its limits are described in [File handling](./guide/file-handling/).
+
+## Use the command-line modes
+
+Pass paths as separate arguments. Quote paths that contain spaces. The process returns status `0` on success and a non-zero status when an argument, input, container, or output operation fails.
+
+<Code language="text">{`compression-demo compress <input> <output.tcmp>
+compression-demo decompress <input.tcmp> <output>
+compression-demo inspect <input>
+compression-demo search <input> <literal-text>
+compression-demo --help`}</Code>
+
+The same actions are available from `make run` or `./compression-demo`: compress, decompress, inspect, search, then exit. The `inspect` mode reports byte frequencies in sorted order. The `search` mode uses Knuth–Morris–Pratt and prints up to the first 20 zero-based match offsets.
+
+### Examples
+
+Use new destination paths for each run. The compression command leaves its source file unchanged.
+
+<Code language="bash">{`./compression-demo compress "samples/sample.txt" "sample.tcmp"
+./compression-demo decompress "sample.tcmp" "sample-restored.txt"
+./compression-demo inspect "samples/sample.txt"
+./compression-demo search "samples/sample.txt" "compression"`}</Code>
+
+If either output already exists, the program refuses to replace it. Remove or rename the destination yourself before retrying.
+
+## Run the documentation site
+
+The Docs site is independent of the C executable. From the repository root, install the lockfile dependencies once and start the development server.
+
+<table>
+  <thead>
+    <tr>
+      <th>Command</th>
+      <th>Effect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <code>pnpm install --frozen-lockfile</code>
+      </td>
+      <td>Install exactly the dependencies recorded by the lockfile.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>pnpm docs:dev</code>
+      </td>
+      <td>
+        Start the local Docs development server; stop it with{" "}
+        <code>Ctrl+C</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>pnpm docs:build</code>
+      </td>
+      <td>
+        Build static pages under <code>dist/docs/</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>pnpm docs:preview</code>
+      </td>
+      <td>Build and serve the static site locally.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>pnpm check:markdown</code>
+      </td>
+      <td>Check Markdown formatting without changing files.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>pnpm format:markdown</code>
+      </td>
+      <td>
+        Format editable Markdown in place; the verbatim assignment brief is
+        excluded.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+Assignment requirements and the separately authored business and technical proposals are grouped under [Assessment](/assessment/).

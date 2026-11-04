@@ -15,7 +15,7 @@
     "quality": "node scripts/terra-quality.mjs",
     "format:c": "make format-c",
     "format:c:check": "make format-c-check",
-    "format": "prettier --write README.md 'docs/**/*.{md,mdx}'",
+    "format": "prettier --write README.md 'docs/**/*.{md,mdx}' '!docs/assessment/assignment/brief.md'",
     "prepare": "husky"
   },
   "devDependencies": {

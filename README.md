@@ -1,10 +1,10 @@
 # Compression Project Docs
 
-Assessment materials and a project proposal for image compression and encryption workflows. Canvas remains authoritative for course requirements, dates, and marking decisions.
+Assessment material, project specifications, and a practical guide to the C compression repository. Canvas remains authoritative for assessment requirements, dates, and marking decisions.
 
-## Getting started
+## Get started
 
-The Docs site requires Node.js and pnpm 10.30.3. The C demo requires a C11 compiler and Make. From the repository root:
+The Docs site requires Node.js and pnpm 10.30.3. The C program requires a C11 compiler and Make.
 
 ```sh
 pnpm install
@@ -12,31 +12,19 @@ pnpm docs
 make run
 ```
 
-`pnpm docs` starts the Docs site. `make run` builds and starts `compression-demo`.
+`pnpm docs` starts the shared Docs site on its assigned local port. `make run` builds and runs the C program.
 
-## Commands
+## Build and clean
 
-Run `pnpm build` to build the Docs site under `dist/docs`. Use `make` to build the C executable and `make clean` to remove it. The repository does not define an automated test script.
+Run `pnpm build` to build the Docs site under `dist/docs`. Run `make` to build the C executable and `make clean` to remove build output.
 
-## Security and limitations
+## Documentation
 
-The encryption demo is coursework, not a security recommendation. Review the assessment brief for the prototype's scope and limitations.
+- [Assessment](docs/assessment/): assignment information and separately labelled business and technical specifications.
+- [Compression guide](docs/compression/): installation, command-line use, file handling, and reference material.
 
-## Structure
+The C program is a coursework project. Do not treat its encryption features as a security recommendation.
 
-`docs/at3/` contains the assessment brief and submission guides. `docs/plan/` contains the compression proposal. `samples/` contains image, PDF, and text inputs; `src/c/` contains the native demo.
-
-## References
-
-- [Assessment brief](docs/at3/brief.md)
-- [Compression plan](docs/plan/0-overview.md)
-- [Build and run targets](Makefile)
-- [MIT license](LICENSE)
-
-## Contributing
-
-Keep course requirements distinct from authored proposal material. Use focused documentation edits.
-
-## Credits and license
+## License
 
 Repository files are licensed under [MIT](LICENSE), subject to third-party rights in sample assets.

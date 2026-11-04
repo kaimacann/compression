@@ -1,9 +1,9 @@
 ---
-title: Overview
-description: "Technical design for a separate compression API supporting Terra Symposium assets."
+title: Business specification
+description: Business case, proposed scope, stakeholders, and acceptance considerations for an asset-processing service.
 ---
 
-> **Status:** Proposal for in-class review. Authored here; not part of the official Canvas specification.
+> **Proposal status.** This authored business specification is a proposal for review. It is separate from the official assignment requirements and the current repository guide.
 
 ## 1. Objective
 
