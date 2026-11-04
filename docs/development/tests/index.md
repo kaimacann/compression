@@ -1,0 +1,105 @@
+---
+title: Processing test results
+description: Verified CLI, raster and PDF before-and-after results.
+---
+
+# Processing test results
+
+Run on 4 November 2026 against the C11 executable. Image fixtures and rendered comparisons are stored beside this page; no test suite or fixture generator was added to the source tree. [Open the image gallery](../../_docs/assets/development/tests/gallery.html) for side-by-side previews.
+
+## Results
+
+| Case                                                               | Outcome                                                                   |                        Size |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------- | --------------------------: |
+| PNG lossless copy (`samples/bald.png`)                             | Byte-identical; CRC-32 and SHA-256 match.                                 | 1,560,548 → 1,560,548 bytes |
+| PNG vector (`samples/bald.png`, 2 colours)                         | Valid SVG; portrait remains recognizable.                                 |    1,560,548 → 37,511 bytes |
+| PNG vector (`samples/duck.png`, 16 colours, 0.5 px)                | Valid SVG; intentionally lossy and larger than source.                    | 3,022,718 → 3,607,243 bytes |
+| JPEG vector (`docs/development/tests/before/test.jpeg`, 2 colours) | Valid SVG; sketch detail retained.                                        |     393,983 → 130,278 bytes |
+| PDF image stream (`samples/image-stream.pdf`, Flate DeviceGray)    | One image object vectorized; the one-page 100 × 100 pt PDF remains valid. |             905 → 787 bytes |
+| TCMP archive round trip (`samples/repeated.txt`)                   | Restored bytes match source.                                              |       397 → 419 → 397 bytes |
+
+Vector output is a derived Terra sketch, not general-purpose image compression. The two-colour mode discards colour and detail; the 16-colour duck export demonstrates that SVG can be larger than its source.
+
+## PNG decode coverage
+
+All 19 PNG inputs decoded to RGBA bytes matching an independent reference pixel array exactly, then produced valid SVG output. Coverage includes grayscale 1/2/4/8/16-bit, RGB 8/16-bit with transparency keys, indexed 1/2/4/8-bit with palette alpha, grayscale-alpha and RGBA 8/16-bit, and Adam7 interlacing across colour types. Every output passed `xmllint --noout`.
+
+The following pairs are scaled previews; original-depth fixtures and generated SVGs are retained in `before/png-cases/` and `after/png-cases/`.
+
+| PNG case           | Before                                                                | After                                                               |
+| ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `gray-1`           | ![Before gray-1](./before/png-preview/gray-1.png)                     | ![After gray-1](./after/png-preview/gray-1.png)                     |
+| `gray-16`          | ![Before gray-16](./before/png-preview/gray-16.png)                   | ![After gray-16](./after/png-preview/gray-16.png)                   |
+| `gray-2`           | ![Before gray-2](./before/png-preview/gray-2.png)                     | ![After gray-2](./after/png-preview/gray-2.png)                     |
+| `gray-4`           | ![Before gray-4](./before/png-preview/gray-4.png)                     | ![After gray-4](./after/png-preview/gray-4.png)                     |
+| `gray-8-trns`      | ![Before gray-8-trns](./before/png-preview/gray-8-trns.png)           | ![After gray-8-trns](./after/png-preview/gray-8-trns.png)           |
+| `gray-8`           | ![Before gray-8](./before/png-preview/gray-8.png)                     | ![After gray-8](./after/png-preview/gray-8.png)                     |
+| `gray-alpha-16`    | ![Before gray-alpha-16](./before/png-preview/gray-alpha-16.png)       | ![After gray-alpha-16](./after/png-preview/gray-alpha-16.png)       |
+| `gray-alpha-8`     | ![Before gray-alpha-8](./before/png-preview/gray-alpha-8.png)         | ![After gray-alpha-8](./after/png-preview/gray-alpha-8.png)         |
+| `gray-alpha-adam7` | ![Before gray-alpha-adam7](./before/png-preview/gray-alpha-adam7.png) | ![After gray-alpha-adam7](./after/png-preview/gray-alpha-adam7.png) |
+| `palette-1-alpha`  | ![Before palette-1-alpha](./before/png-preview/palette-1-alpha.png)   | ![After palette-1-alpha](./after/png-preview/palette-1-alpha.png)   |
+| `palette-2-alpha`  | ![Before palette-2-alpha](./before/png-preview/palette-2-alpha.png)   | ![After palette-2-alpha](./after/png-preview/palette-2-alpha.png)   |
+| `palette-4-alpha`  | ![Before palette-4-alpha](./before/png-preview/palette-4-alpha.png)   | ![After palette-4-alpha](./after/png-preview/palette-4-alpha.png)   |
+| `palette-8-alpha`  | ![Before palette-8-alpha](./before/png-preview/palette-8-alpha.png)   | ![After palette-8-alpha](./after/png-preview/palette-8-alpha.png)   |
+| `palette-adam7`    | ![Before palette-adam7](./before/png-preview/palette-adam7.png)       | ![After palette-adam7](./after/png-preview/palette-adam7.png)       |
+| `rgb-16`           | ![Before rgb-16](./before/png-preview/rgb-16.png)                     | ![After rgb-16](./after/png-preview/rgb-16.png)                     |
+| `rgb-8`            | ![Before rgb-8](./before/png-preview/rgb-8.png)                       | ![After rgb-8](./after/png-preview/rgb-8.png)                       |
+| `rgba-16`          | ![Before rgba-16](./before/png-preview/rgba-16.png)                   | ![After rgba-16](./after/png-preview/rgba-16.png)                   |
+| `rgba-8`           | ![Before rgba-8](./before/png-preview/rgba-8.png)                     | ![After rgba-8](./after/png-preview/rgba-8.png)                     |
+| `rgba-adam7`       | ![Before rgba-adam7](./before/png-preview/rgba-adam7.png)             | ![After rgba-adam7](./after/png-preview/rgba-adam7.png)             |
+
+PNG source and outputs:
+
+| Before                                         | After                                                       |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| ![Original bald PNG](./before/bald-source.png) | ![Lossless PNG copy](./after/bald-lossless.png)             |
+| ![Original duck PNG](./before/duck-source.png) | ![Duck vector SVG rendered as PNG](./after/duck-vector.png) |
+
+JPEG source and vector result:
+
+| Before                                            | After                                              |
+| ------------------------------------------------- | -------------------------------------------------- |
+| ![Original JPEG sketch](./before/jpeg-source.png) | ![Vectorized JPEG sketch](./after/jpeg-vector.png) |
+
+PDF processing covers two distinct outcomes:
+
+| Fixture            | Result                                                                                                                                                                                                             | Before / after                                                                                                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image-stream.pdf` | One Flate grayscale image; 905 → 787 bytes; one 100 × 100 pt page.                                                                                                                                                 | ![Before page](./before/pdf-1.png) → ![After page](./after/pdf-1.png)                                                                                                                                      |
+| `rebuild.pdf`      | Shared Flate RGB XObject rebuilt in a two-page PDF; one image processed, zero unsupported; 50,350 → 1,571 bytes. Page text and 300 × 220 pt geometry retained.                                                     | ![Page 1 before](./before/pdf-render/page-1.png) → ![Page 1 after](./after/pdf-render/page-1.png)<br>![Page 2 before](./before/pdf-render/page-2.png) → ![Page 2 after](./after/pdf-render/page-2.png)     |
+| `multi-image.pdf`  | Two pages, text, shared Flate RGB, JPEG DCT, and Flate soft mask. Three images processed, zero unsupported. The 396,361-byte source was retained unchanged because the 1,650,678-byte vector candidate was larger. | ![Page 1 before](./before/pdf-render/multi-1.png) → ![Page 1 after](./after/pdf-render/multi-1.png)<br>![Page 2 before](./before/pdf-render/multi-2.png) → ![Page 2 after](./after/pdf-render/multi-2.png) |
+
+`pdfinfo` verified page count, dimensions, and file sizes. PDFKit extracted `Rebuilt page one text` and `Rebuilt page two text` identically before and after rebuilding. The no-size-reduction PDF is byte-identical before and after (SHA-256 `2bd986816b99007a4484ca5483216da090e99fefcb0828f42ece46972501b0d1`).
+
+## Commands and safeguards checked
+
+- `make clean && make`, `./compression-demo --help`, and `pnpm run build` passed. CLI verification included account creation/sign-in, media processing, archive round-trip, invalid and truncated input rejection, destination collision protection, explicit replacement, unwritable output paths, and the interactive blank-output sibling name. The Docs dev command reaches Astro ready on port 3010 but the shared app fails during server startup (`module is not defined` in the aliased React CommonJS entry). A temporary node_modules-only workaround did not resolve the runtime and was restored. The built static Docs site is served on port 3014.
+- Interactive PNG mode selection and a blank destination created the expected `-compressed.svg` sibling. PNG lossless copy compared byte-for-byte with the source.
+- Missing input was rejected before the output-path prompt. Existing destinations remained unchanged without `--force`; explicit replacement succeeded.
+- Invalid PNG/PDF signatures and a truncated JPEG were rejected without outputs. A corrupted TCMP archive was rejected without a restored file. All 19 PNG SVGs passed `xmllint --noout`; rebuilt PDFs passed `pdfinfo` and rendered with `pdftoppm` at matching page dimensions.
+- Corrected `config/quality.json` so the quality runner resolves the repository root rather than `config/`. Build, C formatting, source analysis, and docs checks pass. With Homebrew LLVM on `PATH`, `clang-tidy` runs but reports 1,989 diagnostics, including missing direct includes, unchecked I/O, magic constants, and complexity/style findings.
+
+## Reproduce
+
+`make run` opens the menu. On first launch create a local account, then sign in; subsequent CLI commands also prompt for sign-in. In a fresh checkout, the CLI archive round trip is:
+
+```sh
+make
+./compression-demo compress samples/repeated.txt /tmp/repeated.tcmp
+./compression-demo decompress /tmp/repeated.tcmp /tmp/repeated.restored
+cmp samples/repeated.txt /tmp/repeated.restored
+```
+
+Process media with the CLI after signing in:
+
+```sh
+./compression-demo process samples/bald.png /tmp/bald.svg --mode vector
+./compression-demo process samples/duck.png /tmp/duck.svg --mode vector --colors 16 --tolerance 0.5
+./compression-demo process docs/development/tests/before/test.jpeg /tmp/test.svg --mode vector --colors 2
+mkdir -p /tmp/image-stream-svg
+./compression-demo process samples/image-stream.pdf /tmp/image-stream-out.pdf --mode vector --svg-dir /tmp/image-stream-svg --force
+```
+
+The `--svg-dir` parent must already exist. `--force` explicitly allows replacing outputs.
+
+All before/after render files and the PDF fixtures are retained in this folder. PNG fixture generators, pixel-check harnesses, and temporary scripts stayed under `/tmp`; no test suite was added.

@@ -15,18 +15,32 @@ IMPORTS
 #include "../encryption/encryption.h"
 #include "../login/login.h"
 
-/** Archive TCMP files with the coursework stream cipher's fixed demonstration key. */
+/**
+ * Archive input bytes and encrypt the resulting TCMP file in place.
+ * @param inputPath Existing file to archive.
+ * @param outputPath Destination for the encrypted archive.
+ * @return 1 when archiving and encryption both succeed; otherwise 0.
+ * @author haadi
+ */
 static int compressAndEncrypt(const char *inputPath, const char *outputPath) {
     if (!archiveFile(inputPath, outputPath))
         return 0;
     if (encryptFile(outputPath, KEY) != 0) {
         fprintf(stderr, "Could not encrypt the archive: %s\n", outputPath);
+        if (remove(outputPath) != 0)
+            perror("Could not remove the unencrypted archive");
         return 0;
     }
     return 1;
 }
 
-/** Decrypt an archive for restoration, then put its encrypted source back as it was. */
+/**
+ * Temporarily decrypt an archive, restore its payload, then re-encrypt it.
+ * @param inputPath Encrypted TCMP archive to restore and preserve.
+ * @param outputPath Destination for the restored original bytes.
+ * @return 1 when restoration and source re-encryption both succeed; otherwise 0.
+ * @author haadi
+ */
 static int decryptAndDecompress(const char *inputPath, const char *outputPath) {
     int restored;
     if (encryptFile(inputPath, KEY) != 0) {
