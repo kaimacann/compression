@@ -5,14 +5,14 @@
 IMPORTS
 //////////////////////////////////////////////////*/
 
-// SHARED CONTRACT
+/* SHARED CONTRACT*/
 #include "codec.h"
 
 /*//////////////////////////////////////////////////
 TYPES
 //////////////////////////////////////////////////*/
 
-// PROCESSING POLICY
+/* PROCESSING POLICY*/
 /**
  * Explicit media mode and output policy.
  * @author kai
@@ -75,7 +75,7 @@ typedef struct {
 API
 //////////////////////////////////////////////////*/
 
-// PROCESSING OPERATIONS
+/* PROCESSING OPERATIONS*/
 /** Trace adaptive colour regions to SVG and PDF paths.
  * @param image Decoded RGBA source.
  * @param colors Palette size, from two through 256.

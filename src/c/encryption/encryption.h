@@ -1,10 +1,10 @@
 #ifndef ENCRYPTION_H
 #define ENCRYPTION_H
 
-#include<stdio.h>
+#include <stdio.h>
 
-/*FILE ENCRYPTION (Marceline) 
-* --------------------------*/
+/*FILE ENCRYPTION (Marceline)
+ * --------------------------*/
 
 /*Standard Multiplier for xorshift64*/
 #define PRNG_MULTIPLIER 0x2545F4914F6CDD1DULL
@@ -23,13 +23,13 @@ typedef struct streamcipher streamcipher_t;
  * @return 0 when initialized, or 1 for a null state or zero key.
  * @author marceline
  */
-int initCipher (streamcipher_t *cipher, unsigned long long key);
+int initCipher(streamcipher_t *cipher, unsigned long long key);
 
 /** Advance the generator and make its next eight bytes available.
  * @param cipher Initialized stream state to advance.
  * @author marceline
  */
-void nextRandom (streamcipher_t *cipher);
+void nextRandom(streamcipher_t *cipher);
 
 /** XOR a buffer with the stream, allowing the same state and key to restore it.
  * @param cipher Initialized stream state, advanced as bytes are consumed.
@@ -46,6 +46,6 @@ int performCipher(streamcipher_t *cipher, char *buffer, size_t length);
  * @return 0 when all bytes are transformed and the file closes cleanly; otherwise 1.
  * @author marceline
  */
-int encryptFile (const char *filename, unsigned long long key);
+int encryptFile(const char *filename, unsigned long long key);
 
 #endif

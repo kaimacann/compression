@@ -5,7 +5,7 @@
 IMPORTS
 //////////////////////////////////////////////////*/
 
-// STANDARD LIBRARIES
+/* STANDARD LIBRARIES*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +15,7 @@ IMPORTS
 TYPES
 //////////////////////////////////////////////////*/
 
-// RASTER STORAGE
+/* RASTER STORAGE*/
 #define RC_LIMIT (256UL * 1024UL * 1024UL)
 #define RC_PIXELS (16UL * 1024UL * 1024UL)
 /**
@@ -65,7 +65,7 @@ typedef struct {
 API
 //////////////////////////////////////////////////*/
 
-// CODECS AND BUFFER OWNERSHIP
+/* CODECS AND BUFFER OWNERSHIP*/
 /**
  * Append bytes within the processing memory limit.
  * @param buffer Destination buffer.
@@ -112,7 +112,7 @@ int rcInflate(const unsigned char *data, size_t length, RcBuffer *output);
  * @author kai
  */
 int rcDeflate(const unsigned char *data, size_t length, RcBuffer *output);
-// SHARED PIXEL PRIMITIVES
+/* SHARED PIXEL PRIMITIVES*/
 /**
  * Extract one legal 1/2/4/8/16-bit sample from a packed row.
  * @param row Packed samples.

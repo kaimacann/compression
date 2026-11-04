@@ -1,6 +1,7 @@
 /**
  * @file main.c Command-line and interactive application entry point.
  * @author haadi
+ * Compile with: make
  */
 /*//////////////////////////////////////////////////
 IMPORTS

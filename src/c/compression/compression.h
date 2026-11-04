@@ -5,7 +5,7 @@
 API
 //////////////////////////////////////////////////*/
 
-// PROCESSING OPERATIONS
+/* PROCESSING OPERATIONS*/
 /** Preserve supported media or archive non-media bytes in TCMP.
  * @param inputPath Source file; its contents determine media routing.
  * @param outputPath New destination; existing files are preserved.

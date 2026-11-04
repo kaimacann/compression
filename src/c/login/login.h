@@ -1,12 +1,12 @@
 #ifndef LOGIN_H
 #define LOGIN_H
 
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-/*LOGIN SECURITY (Marceline) 
-* --------------------------*/
+/*LOGIN SECURITY (Marceline)
+ * --------------------------*/
 
 #define ACCOUNT_FILE ".login"
 #define MAX_ACCOUNTS 100

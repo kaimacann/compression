@@ -6,14 +6,14 @@
 IMPORTS
 //////////////////////////////////////////////////*/
 
-// SHARED CONTRACT
+/* SHARED CONTRACT*/
 #include "media.h"
 
 /*//////////////////////////////////////////////////
 CONFIG
 //////////////////////////////////////////////////*/
 
-// PROCESSING STATE
+/* PROCESSING STATE*/
 typedef struct {
     char *path, *stage, *backup;
     const unsigned char *data;
@@ -25,7 +25,7 @@ typedef struct {
 FILES
 //////////////////////////////////////////////////*/
 
-// INPUT BUFFERS
+/* INPUT BUFFERS*/
 /**
  * Allocate and copy a NUL-terminated path or label.
  * @param p NUL-terminated text to duplicate.
@@ -88,7 +88,7 @@ static int fileEquals(FILE *f, const unsigned char *p, size_t n) {
     return !ferror(f) && at == n;
 }
 
-// OUTPUT LIFETIME
+/* OUTPUT LIFETIME*/
 /**
  * Create a collision-free staging or backup file beside the requested destination.
  * @param path Destination path used to form a sibling temporary name.
@@ -139,7 +139,7 @@ static void cleanOutputs(Output *out, size_t count) {
 TRANSACTIONS
 //////////////////////////////////////////////////*/
 
-// STAGING AND ROLLBACK
+/* STAGING AND ROLLBACK*/
 /**
  * Stage every output before replacement and restore backups if a commit step fails.
  * @return 0 after rollback; failed restoration leaves a reported backup path.
@@ -154,9 +154,9 @@ static int writeOutputs(Output *out, size_t count, const unsigned char *source, 
                         int force) {
     size_t i, j;
 
-    // Validate the complete destination set before creating staging files.
+    /* Validate the complete destination set before creating staging files.*/
 
-    // PREFLIGHT THE DESTINATION SET
+    /* PREFLIGHT THE DESTINATION SET*/
     for (i = 0; i < count; i++) {
         FILE *existing;
         for (j = 0; j < i; j++)
@@ -176,9 +176,9 @@ static int writeOutputs(Output *out, size_t count, const unsigned char *source, 
                 return 0;
             }
 
-            // PROTECT SOURCE ALIASES
-            // An identical unchanged copy needs no replacement; differing derived data must use
-            // another path.
+            /* PROTECT SOURCE ALIASES*/
+            /* An identical unchanged copy needs no replacement; differing derived data must use*/
+            /* another path.*/
             if (fileEquals(existing, source, sourceLength)) {
                 if (out[i].length == sourceLength && !memcmp(out[i].data, source, sourceLength))
                     out[i].skip = 1;
@@ -194,9 +194,9 @@ static int writeOutputs(Output *out, size_t count, const unsigned char *source, 
         }
     }
 
-    // Stage every payload before moving any prior destination.
+    /* Stage every payload before moving any prior destination.*/
 
-    // WRITE ALL STAGED PAYLOADS
+    /* WRITE ALL STAGED PAYLOADS*/
     for (i = 0; i < count; i++) {
         FILE *stage;
         int written;
@@ -218,9 +218,9 @@ static int writeOutputs(Output *out, size_t count, const unsigned char *source, 
         }
     }
 
-    // Retain backups until the whole output set has committed.
+    /* Retain backups until the whole output set has committed.*/
 
-    // COMMIT WITH RECOVERABLE BACKUPS
+    /* COMMIT WITH RECOVERABLE BACKUPS*/
     for (i = 0; i < count; i++) {
         if (out[i].skip)
             continue;
@@ -248,8 +248,8 @@ static int writeOutputs(Output *out, size_t count, const unsigned char *source, 
     }
     return 1;
 rollback:
-    // ROLL BACK IN REVERSE COMMIT ORDER
-    // Keep a backup available and report its location if automatic restoration fails.
+    /* ROLL BACK IN REVERSE COMMIT ORDER*/
+    /* Keep a backup available and report its location if automatic restoration fails.*/
     for (j = i + 1; j > 0; j--) {
         Output *o = &out[j - 1];
         if (o->committed)
@@ -268,7 +268,7 @@ rollback:
 PROCESSING
 //////////////////////////////////////////////////*/
 
-// SIDECAR NAMES
+/* SIDECAR NAMES*/
 /**
  * Build the numbered SVG sidecar path beside the PDF or in the requested directory.
  * @param output Processed PDF path used as the default sidecar base.
@@ -303,7 +303,7 @@ static char *imagePath(const char *output, const char *directory, size_t number)
     return result;
 }
 
-// FORMAT ROUTING
+/* FORMAT ROUTING*/
 /**
  * Validate the input format, apply the selected raster or vector pipeline, and commit outputs.
  * @param input PNG, JPEG, or PDF source path.
@@ -323,7 +323,7 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
     const char *format, *status;
     int pdf, isPng, isJpeg, ok = 0;
 
-    // VALIDATE THE REQUEST
+    /* VALIDATE THE REQUEST*/
     if (!input || !output || !options || !input[0] || !output[0] || !strcmp(input, output) ||
         options->colors < 2 || options->colors > 256 || !isfinite(options->tolerance) ||
         options->tolerance < 0 || options->tolerance > 2) {
@@ -333,9 +333,9 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
         return 0;
     }
 
-    // READ AND IDENTIFY THE SOURCE
-    // Detection uses file signatures rather than the supplied filename extension.
-    // A sentinel bounds strtod in PDF dictionaries without becoming logical file data.
+    /* READ AND IDENTIFY THE SOURCE*/
+    /* Detection uses file signatures rather than the supplied filename extension.*/
+    /* A sentinel bounds strtod in PDF dictionaries without becoming logical file data.*/
     if (!readWhole(input, &source) || !rcAppend(&source, "", 1))
         goto done;
     source.size--;
@@ -348,9 +348,9 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
     }
     format = pdf ? "PDF" : isPng ? "PNG" : "JPEG";
 
-    // Select a candidate before deciding whether the primary PDF shrinks.
+    /* Select a candidate before deciding whether the primary PDF shrinks.*/
 
-    // PROCESS THE SELECTED FORMAT
+    /* PROCESS THE SELECTED FORMAT*/
     if (pdf) {
         if (!processPdf(source.data, source.size, options, &candidate, &images, &imageCount,
                         &unsupported)) {
@@ -359,8 +359,8 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
         }
         candidateSize = candidate.size ? candidate.size : source.size;
 
-        // SELECT THE PRIMARY PDF REPRESENTATION
-        // Borrow source bytes for preservation; only a smaller rebuilt candidate is selected.
+        /* SELECT THE PRIMARY PDF REPRESENTATION*/
+        /* Borrow source bytes for preservation; only a smaller rebuilt candidate is selected.*/
         if (candidate.size && candidate.size < source.size) {
             result = &candidate;
             status = unsupported ? "smaller-partial" : "smaller";
@@ -387,9 +387,9 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
         candidateSize = result->size;
     }
 
-    // Collect primary and sidecar outputs into one transaction.
+    /* Collect primary and sidecar outputs into one transaction.*/
 
-    // BUILD THE OUTPUT TRANSACTION
+    /* BUILD THE OUTPUT TRANSACTION*/
     count = 1 + imageCount;
     outputs = calloc(count, sizeof(*outputs));
     if (!outputs)
@@ -407,7 +407,7 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
             goto done;
     }
 
-    // COMMIT AND REPORT THE RESULT
+    /* COMMIT AND REPORT THE RESULT*/
     if (!writeOutputs(outputs, count, source.data, source.size, options->force))
         goto done;
     printf("format=%s mode=%s status=%s\n", format, options->vectorMode ? "vector" : "lossless",
@@ -416,9 +416,9 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
            (unsigned long)source.size, rcCrc(source.data, source.size), (unsigned long)result->size,
            rcCrc(result->data, result->size), (unsigned long)candidateSize);
 
-    // REPORT FORMAT-SPECIFIC METADATA
-    // Printed sizes and checksums describe the selected representation, including unchanged
-    // fallbacks.
+    /* REPORT FORMAT-SPECIFIC METADATA*/
+    /* Printed sizes and checksums describe the selected representation, including unchanged*/
+    /* fallbacks.*/
     if (!pdf)
         printf("dimensions=%u x %u; palette=%u; tolerance=%.3g pixels\n", image.width, image.height,
                options->vectorMode ? vector.colors : 0, options->tolerance);
@@ -430,7 +430,7 @@ int processMedia(const char *input, const char *output, const MediaOptions *opti
         printf("Wrote %s (%lu bytes)\n", outputs[i].path, (unsigned long)outputs[i].length);
     ok = 1;
 done:
-    // RELEASE OWNED BUFFERS
+    /* RELEASE OWNED BUFFERS*/
     cleanOutputs(outputs, count);
     free(source.data);
     free(candidate.data);

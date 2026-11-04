@@ -6,14 +6,14 @@
 IMPORTS
 //////////////////////////////////////////////////*/
 
-// SHARED CONTRACT
+/* SHARED CONTRACT*/
 #include "codec.h"
 
 /*//////////////////////////////////////////////////
 CONFIG
 //////////////////////////////////////////////////*/
 
-// PROCESSING STATE
+/* PROCESSING STATE*/
 static const unsigned char zig[64] = {
     0,  1,  8,  16, 9,  2,  3,  10, 17, 24, 32, 25, 18, 11, 4,  5,  12, 19, 26, 33, 40, 48,
     41, 34, 27, 20, 13, 6,  7,  14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23,
@@ -42,7 +42,7 @@ typedef struct {
 DECODING
 //////////////////////////////////////////////////*/
 
-// ENTROPY
+/* ENTROPY*/
 /**
  * Read a big-endian 16-bit JPEG marker or segment value.
  * @param p Two JPEG bytes in big-endian order.
@@ -89,7 +89,7 @@ static unsigned jbits(Jpeg *j, unsigned n) {
  */
 static int jhuff(Jpeg *j, const JHuff *h) {
     unsigned code = 0, first = 0, index = 0, n;
-    // An unregistered table has zero counts and cannot match any code in this bounded walk.
+    /* An unregistered table has zero counts and cannot match any code in this bounded walk.*/
     for (n = 1; n <= 16; n++) {
         code = (code << 1) | jbits(j, 1);
         if (j->bad)
@@ -136,7 +136,7 @@ static int nextMarker(Jpeg *j) {
     return (int)c;
 }
 
-// METADATA
+/* METADATA*/
 /**
  * Read a TIFF 16-bit value in the byte order declared by EXIF.
  * @param p Two TIFF bytes to interpret.
@@ -194,7 +194,7 @@ static unsigned exifOrientation(const unsigned char *p, size_t n) {
     return 1;
 }
 
-// COEFFICIENTS
+/* COEFFICIENTS*/
 /**
  * Parse JPEG frame dimensions, sampling factors, and quantization table references.
  * @param j JPEG state receiving frame metadata.
@@ -206,7 +206,7 @@ static unsigned exifOrientation(const unsigned char *p, size_t n) {
 static int frame(Jpeg *j, const unsigned char *p, size_t n) {
     unsigned i;
 
-    // VALIDATE FRAME GEOMETRY
+    /* VALIDATE FRAME GEOMETRY*/
     if (n < 6 || p[0] != 8 || j->nc)
         return 0;
     j->h = j16(p + 1);
@@ -216,8 +216,8 @@ static int frame(Jpeg *j, const unsigned char *p, size_t n) {
         n != 6 + j->nc * 3)
         return 0;
 
-    // REGISTER COMPONENT SAMPLING
-    // Sampling factors determine the MCU grid and each padded coefficient plane.
+    /* REGISTER COMPONENT SAMPLING*/
+    /* Sampling factors determine the MCU grid and each padded coefficient plane.*/
     for (i = 0; i < j->nc; i++) {
         JComp *c = &j->c[i];
         unsigned k;
@@ -240,8 +240,8 @@ static int frame(Jpeg *j, const unsigned char *p, size_t n) {
     j->mx = (j->w + 8 * j->mh - 1) / (8 * j->mh);
     j->my = (j->h + 8 * j->mv - 1) / (8 * j->mv);
     {
-        // ALLOCATE BOUNDED COEFFICIENT PLANES
-        // Track the combined allocation so component padding cannot bypass the memory limit.
+        /* ALLOCATE BOUNDED COEFFICIENT PLANES*/
+        /* Track the combined allocation so component padding cannot bypass the memory limit.*/
         size_t total = 0;
         unsigned blocks = 0;
         for (i = 0; i < j->nc; i++) {
@@ -297,8 +297,8 @@ static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, 
                        unsigned se, unsigned ah, unsigned al, unsigned *eob) {
     unsigned k = ss, bit = 1U << al;
 
-    // DECODE OR REFINE THE DC VALUE
-    // DC coefficients are differences from the previous block in the same component.
+    /* DECODE OR REFINE THE DC VALUE*/
+    /* DC coefficients are differences from the previous block in the same component.*/
     if (!ss) {
         if (!ah) {
             int s = jhuff(j, &j->tables[0][dc]);
@@ -319,8 +319,8 @@ static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, 
             return !j->bad;
     }
 
-    // DECODE INITIAL AC COEFFICIENTS
-    // An EOB run can skip the remaining spectral band across several blocks.
+    /* DECODE INITIAL AC COEFFICIENTS*/
+    /* An EOB run can skip the remaining spectral band across several blocks.*/
     if (!ah) {
         if (*eob) {
             (*eob)--;
@@ -349,8 +349,8 @@ static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, 
         return !j->bad;
     }
 
-    // REFINE PROGRESSIVE AC COEFFICIENTS
-    // New coefficients consume a sign bit; existing nonzero values consume refinement bits.
+    /* REFINE PROGRESSIVE AC COEFFICIENTS*/
+    /* New coefficients consume a sign bit; existing nonzero values consume refinement bits.*/
     if (!*eob) {
         while (k <= se && !j->bad) {
             int symbol = jhuff(j, &j->tables[1][ac]), value = 0;
@@ -365,8 +365,8 @@ static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, 
             } else
                 run = 16;
 
-            // COUNT ONLY ZERO COEFFICIENTS
-            // Nonzero coefficients still consume refinement bits but do not reduce the zero run.
+            /* COUNT ONLY ZERO COEFFICIENTS*/
+            /* Nonzero coefficients still consume refinement bits but do not reduce the zero run.*/
             while (k <= se) {
                 int *v = &block[zig[k]];
                 if (*v) {
@@ -389,7 +389,7 @@ static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, 
         }
     }
 
-    // REFINE THE REMAINDER OF AN EOB BLOCK
+    /* REFINE THE REMAINDER OF AN EOB BLOCK*/
     if (*eob) {
         for (; k <= se; k++) {
             int *v = &block[zig[k]];
@@ -412,7 +412,7 @@ static int scan(Jpeg *j, const unsigned char *p, size_t n) {
     unsigned ns, i, indices[3], dcs[3], acs[3], ss, se, ah, al, mx, my, x, y, unit = 0, eob = 0,
                                                                               rst = 0;
 
-    // VALIDATE SCAN COMPONENTS
+    /* VALIDATE SCAN COMPONENTS*/
     if (!j->nc || n < 4)
         return 0;
     ns = p[0];
@@ -439,8 +439,8 @@ static int scan(Jpeg *j, const unsigned char *p, size_t n) {
         j->c[c].dc = 0;
     }
 
-    // VALIDATE SPECTRAL PROGRESSION
-    // Refinement scans must follow the previous approximation level for every selected coefficient.
+    /* VALIDATE SPECTRAL PROGRESSION*/
+    /* Refinement scans must follow the previous approximation level for every selected coefficient.*/
     ss = p[1 + ns * 2];
     se = p[2 + ns * 2];
     ah = p[3 + ns * 2] >> 4;
@@ -462,18 +462,18 @@ static int scan(Jpeg *j, const unsigned char *p, size_t n) {
         }
     }
 
-    // PREPARE THE MCU WALK
-    // Single-component scans use actual block bounds rather than interleaved padding.
+    /* PREPARE THE MCU WALK*/
+    /* Single-component scans use actual block bounds rather than interleaved padding.*/
     mx = ns == 1 ? j->c[indices[0]].actualX : j->mx;
     my = ns == 1 ? j->c[indices[0]].actualY : j->my;
     j->bits = 0;
     j->count = 0;
 
-    // Restart intervals delimit both DC predictors and progressive EOB runs.
+    /* Restart intervals delimit both DC predictors and progressive EOB runs.*/
     for (y = 0; y < my; y++)
         for (x = 0; x < mx; x++) {
-            // RESET AT RESTART BOUNDARIES
-            // Restart marker numbering cycles modulo eight and resets predictors and EOB state.
+            /* RESET AT RESTART BOUNDARIES*/
+            /* Restart marker numbering cycles modulo eight and resets predictors and EOB state.*/
             if (j->restart && unit == j->restart) {
                 int marker;
                 j->bits = 0;
@@ -488,7 +488,7 @@ static int scan(Jpeg *j, const unsigned char *p, size_t n) {
                     j->c[i].dc = 0;
             }
 
-            // DECODE THE MCU COMPONENT BLOCKS
+            /* DECODE THE MCU COMPONENT BLOCKS*/
             for (i = 0; i < ns; i++) {
                 JComp *c = &j->c[indices[i]];
                 unsigned yy, xx, h = ns == 1 ? 1 : c->h, v = ns == 1 ? 1 : c->v;
@@ -511,7 +511,7 @@ static int scan(Jpeg *j, const unsigned char *p, size_t n) {
 RECONSTRUCTION
 //////////////////////////////////////////////////*/
 
-// SAMPLE LIMITS
+/* SAMPLE LIMITS*/
 /**
  * Round and clamp a component value to the 8-bit channel range.
  * @param v Floating-point channel value before 8-bit clamping.
@@ -526,7 +526,7 @@ static unsigned char clampByte(double v) {
     return (unsigned char)floor(v + 0.5);
 }
 
-// INVERSE TRANSFORM
+/* INVERSE TRANSFORM*/
 /**
  * Convert decoded JPEG component planes to straight-alpha RGBA8 pixels.
  * @param j Decoded component planes and sampling metadata.
@@ -540,24 +540,24 @@ static int render(Jpeg *j, RcImage *im) {
     int direct =
         j->rgb || (j->nc == 3 && j->c[0].id == 'R' && j->c[1].id == 'G' && j->c[2].id == 'B');
 
-    // BUILD THE INVERSE-TRANSFORM BASIS
+    /* BUILD THE INVERSE-TRANSFORM BASIS*/
     for (x = 0; x < 8; x++)
         for (u = 0; u < 8; u++)
             basis[x][u] = (u ? 1.0 : 0.7071067811865475) *
                           cos((2.0 * x + 1) * u * 3.14159265358979323846 / 16.0);
 
-    // Reconstruct separate component planes before centred chroma sampling.
+    /* Reconstruct separate component planes before centred chroma sampling.*/
     for (c = 0; c < j->nc; c++) {
         JComp *co = &j->c[c];
         unsigned bx, by, stride = co->bx * 8;
-        // DC progression and a nonzero first quantizer prove that both inputs were registered.
+        /* DC progression and a nonzero first quantizer prove that both inputs were registered.*/
         if (co->last[0] < 0 || !j->quant[co->q][0])
             return 0;
         co->samples = malloc((size_t)co->bx * co->by * 64);
         if (!co->samples)
             return 0;
 
-        // RECONSTRUCT COMPONENT BLOCKS
+        /* RECONSTRUCT COMPONENT BLOCKS*/
         for (by = 0; by < co->by; by++)
             for (bx = 0; bx < co->bx; bx++) {
                 int *coeff = co->coef + ((size_t)by * co->bx + bx) * 64;
@@ -569,8 +569,8 @@ static int render(Jpeg *j, RcImage *im) {
                         break;
                     }
 
-                // HANDLE CONSTANT BLOCKS
-                // A DC-only block has one value throughout, avoiding the two full transform passes.
+                /* HANDLE CONSTANT BLOCKS*/
+                /* A DC-only block has one value throughout, avoiding the two full transform passes.*/
                 if (!ac) {
                     unsigned char val =
                         clampByte((double)coeff[0] * j->quant[co->q][0] / 8.0 + 128);
@@ -579,9 +579,9 @@ static int render(Jpeg *j, RcImage *im) {
                     continue;
                 }
 
-                // APPLY THE TWO TRANSFORM PASSES
-                // Dequantize horizontally, then reconstruct rows vertically with the shared cosine
-                // basis.
+                /* APPLY THE TWO TRANSFORM PASSES*/
+                /* Dequantize horizontally, then reconstruct rows vertically with the shared cosine*/
+                /* basis.*/
                 for (v = 0; v < 8; v++)
                     for (x = 0; x < 8; x++) {
                         double sum = 0;
@@ -600,7 +600,7 @@ static int render(Jpeg *j, RcImage *im) {
             }
     }
 
-    // Convert reconstructed samples only after every component is available.
+    /* Convert reconstructed samples only after every component is available.*/
     im->rgba = malloc((size_t)j->w * j->h * 4);
     if (!im->rgba)
         return 0;
@@ -611,8 +611,8 @@ static int render(Jpeg *j, RcImage *im) {
             double values[3] = {128, 128, 128};
             unsigned char *pixel = im->rgba + ((size_t)y * j->w + x) * 4;
 
-            // UPSAMPLE COMPONENTS AT PIXEL CENTRES
-            // Clamp neighbours at the visible plane edges instead of sampling padded image blocks.
+            /* UPSAMPLE COMPONENTS AT PIXEL CENTRES*/
+            /* Clamp neighbours at the visible plane edges instead of sampling padded image blocks.*/
             for (c = 0; c < j->nc; c++) {
                 JComp *co = &j->c[c];
                 double fx = ((x + 0.5) * co->h / j->mh) - 0.5,
@@ -643,8 +643,8 @@ static int render(Jpeg *j, RcImage *im) {
                                 ay;
             }
 
-            // CONVERT COMPONENT VALUES TO RGB
-            // Grayscale and explicit RGB bypass the YCbCr colour transform.
+            /* CONVERT COMPONENT VALUES TO RGB*/
+            /* Grayscale and explicit RGB bypass the YCbCr colour transform.*/
             if (j->nc == 1)
                 pixel[0] = pixel[1] = pixel[2] = clampByte(values[0]);
             else if (direct)
@@ -661,7 +661,7 @@ static int render(Jpeg *j, RcImage *im) {
     return 1;
 }
 
-// ORIENTATION
+/* ORIENTATION*/
 /**
  * Apply EXIF orientation by rearranging decoded pixels and dimensions.
  * @param im Owned image whose pixels and dimensions are transformed.
@@ -674,15 +674,15 @@ static int orientImage(RcImage *im, unsigned orientation) {
                    nh = orientation >= 5 ? w : h;
     unsigned char *out;
 
-    // PREPARE ORIENTATION REMAPPING
+    /* PREPARE ORIENTATION REMAPPING*/
     if (orientation == 1)
         return 1;
     out = malloc((size_t)w * h * 4);
     if (!out)
         return 0;
 
-    // MAP SOURCE PIXELS TO THE NEW GRID
-    // Transpose first; bits zero and one then reflect destination x and y respectively.
+    /* MAP SOURCE PIXELS TO THE NEW GRID*/
+    /* Transpose first; bits zero and one then reflect destination x and y respectively.*/
     for (y = 0; y < h; y++)
         for (x = 0; x < w; x++) {
             static const unsigned char reflections[9] = {0, 0, 1, 3, 2, 0, 1, 3, 2};
@@ -704,7 +704,7 @@ static int orientImage(RcImage *im, unsigned orientation) {
 API
 //////////////////////////////////////////////////*/
 
-// JPEG INPUT
+/* JPEG INPUT*/
 /**
  * Decode supported 8-bit Huffman JPEG data and optionally apply EXIF orientation.
  * @param p Complete JPEG file bytes.
@@ -719,7 +719,7 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
     int ok = 0, ended = 0;
     unsigned c;
 
-    // PREPARE DECODER OWNERSHIP
+    /* PREPARE DECODER OWNERSHIP*/
     if (!j)
         return 0;
     memset(im, 0, sizeof(*im));
@@ -730,8 +730,8 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
     if (n < 4 || p[0] != 255 || p[1] != 216)
         goto done;
 
-    // WALK LENGTH-DELIMITED MARKERS
-    // Entropy scans consume their own bytes; other marker payloads stay within the declared length.
+    /* WALK LENGTH-DELIMITED MARKERS*/
+    /* Entropy scans consume their own bytes; other marker payloads stay within the declared length.*/
     while (j->at < n) {
         int marker = nextMarker(j);
         unsigned length;
@@ -753,7 +753,7 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
         payload = length - 2;
         j->at += length;
 
-        // DISPATCH THE MARKER PAYLOAD
+        /* DISPATCH THE MARKER PAYLOAD*/
         if (marker == 192 || marker == 194) {
             j->progressive = marker == 194;
             if (!frame(j, body, payload))
@@ -761,9 +761,9 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
         } else if (marker == 219) {
             size_t at = 0;
             while (at < payload) {
-                // READ QUANTIZATION TABLES
-                // JPEG transmits values in zigzag order; the transform consumes natural coefficient
-                // order.
+                /* READ QUANTIZATION TABLES*/
+                /* JPEG transmits values in zigzag order; the transform consumes natural coefficient*/
+                /* order.*/
                 unsigned spec = body[at++], q = spec & 15, wide = spec >> 4, k;
                 if (q > 3 || wide > 1 || (wide ? 128 : 64) > payload - at)
                     goto done;
@@ -778,8 +778,8 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
         } else if (marker == 196) {
             size_t at = 0;
             while (at < payload) {
-                // READ HUFFMAN TABLES
-                // Check the canonical code space before accepting the transmitted symbol list.
+                /* READ HUFFMAN TABLES*/
+                /* Check the canonical code space before accepting the transmitted symbol list.*/
                 unsigned spec = body[at++], kind = spec >> 4, id = spec & 15, k, total = 0;
                 int left = 1;
                 JHuff *h;
@@ -800,8 +800,8 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
                     h->symbol[k] = body[at++];
             }
         } else if (marker == 221) {
-            // READ RESTART INTERVALS
-            // This count determines when entropy predictors reset within later scans.
+            /* READ RESTART INTERVALS*/
+            /* This count determines when entropy predictors reset within later scans.*/
             if (payload != 2)
                 goto done;
             j->restart = j16(body);
@@ -818,15 +818,15 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
             goto done;
     }
 
-    // RECONSTRUCT AND ORIENT PIXELS
+    /* RECONSTRUCT AND ORIENT PIXELS*/
     if (!ended || !render(j, im))
         goto done;
     if (orient && !orientImage(im, j->orientation))
         goto done;
     ok = 1;
 done:
-    // RELEASE COMPONENT WORKSPACE
-    // On failure, also discard any partially reconstructed destination pixels.
+    /* RELEASE COMPONENT WORKSPACE*/
+    /* On failure, also discard any partially reconstructed destination pixels.*/
     for (c = 0; c < 3; c++) {
         free(j->c[c].coef);
         free(j->c[c].samples);

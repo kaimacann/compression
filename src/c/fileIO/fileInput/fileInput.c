@@ -67,16 +67,16 @@ static int hasExtension(const char *path, const char *extension) {
  * @author haadi
  */
 static char detectFileType(const char *path) {
-    // KEEP PDF INPUT DISTINCT SO THE DOCUMENT FLOW CAN FIND IMAGE OBJECTS
+    /* KEEP PDF INPUT DISTINCT SO THE DOCUMENT FLOW CAN FIND IMAGE OBJECTS*/
     if (hasExtension(path, ".pdf"))
         return 'p';
 
-    // DOCUMENT EXTENSIONS USE THE DOCUMENT STUB FLOW
+    /* DOCUMENT EXTENSIONS USE THE DOCUMENT STUB FLOW*/
     if (hasExtension(path, ".txt") || hasExtension(path, ".doc") || hasExtension(path, ".docx") ||
         hasExtension(path, ".rtf") || hasExtension(path, ".odt"))
         return 'd';
 
-    // IMAGE EXTENSIONS USE THE IMAGE STUB FLOW
+    /* IMAGE EXTENSIONS USE THE IMAGE STUB FLOW*/
     if (hasExtension(path, ".png") || hasExtension(path, ".jpg") || hasExtension(path, ".jpeg") ||
         hasExtension(path, ".gif") || hasExtension(path, ".bmp") || hasExtension(path, ".webp") ||
         hasExtension(path, ".tif") || hasExtension(path, ".tiff") || hasExtension(path, ".svg"))
@@ -101,7 +101,7 @@ int readInputFile(const char *inputPath, file_t *fileP) {
     if (inputPath == NULL || fileP == NULL)
         return 0;
 
-    // OPEN IN BINARY MODE SO THE BUFFER PRESERVES EVERY BYTE
+    /* OPEN IN BINARY MODE SO THE BUFFER PRESERVES EVERY BYTE*/
     source = fopen(inputPath, "rb");
     if (source == NULL) {
         perror(inputPath);
@@ -124,7 +124,7 @@ int readInputFile(const char *inputPath, file_t *fileP) {
         return 0;
     }
 
-    // ALLOCATE THE EXACT BUFFER AND READ THE COMPLETE FILE
+    /* ALLOCATE THE EXACT BUFFER AND READ THE COMPLETE FILE*/
     dataSize = (size_t)fileSize;
     if (dataSize > 0) {
         data = malloc(dataSize);
@@ -146,7 +146,7 @@ int readInputFile(const char *inputPath, file_t *fileP) {
         return 0;
     }
 
-    // STORE LOADED BYTES AND PATH METADATA IN THE FILE RECORD
+    /* STORE LOADED BYTES AND PATH METADATA IN THE FILE RECORD*/
     fileP->data = data;
     fileP->dataSize = dataSize;
     fileP->type = detectFileType(inputPath);
@@ -163,7 +163,7 @@ int readInputFile(const char *inputPath, file_t *fileP) {
 void clearInput(void) {
     int ch;
 
-    // DISCARD THE REST OF THE PREVIOUS MENU LINE
+    /* DISCARD THE REST OF THE PREVIOUS MENU LINE*/
     while ((ch = getchar()) != '\n' && ch != EOF)
         ;
 }
@@ -181,10 +181,10 @@ FILE SELECTION FLOW
 int selectFiles(char username[]) {
     char folderAddress[150];
 
-    // KEEP THE INPUT FOLDER FIXED UNTIL NAVIGATION IS IMPLEMENTED
+    /* KEEP THE INPUT FOLDER FIXED UNTIL NAVIGATION IS IMPLEMENTED*/
     strcpy(folderAddress, "./src/inputFolder");
 
-    // SHOW THE AVAILABLE ENTRIES, THEN CAPTURE ONE RECORD
+    /* SHOW THE AVAILABLE ENTRIES, THEN CAPTURE ONE RECORD*/
     displayFiles(folderAddress);
     file_t newFile = createFile(folderAddress, username);
     (void)newFile;
@@ -199,7 +199,7 @@ int selectFiles(char username[]) {
 void displayFiles(char folderAddress[]) {
     char prompt[153] = "ls -1 ";
 
-    // BUILD THE EXISTING NUMBERED LISTING COMMAND FOR THE MENU
+    /* BUILD THE EXISTING NUMBERED LISTING COMMAND FOR THE MENU*/
     printf("Select one of the following files:\n");
     strcat(prompt, folderAddress);
     strcat(prompt, "| cat -n");
@@ -217,15 +217,15 @@ file_t createFile(char folderAddress[], char username[]) {
     char fileName[100];
     file_t newFile = {0};
 
-    // REMOVE THE PREVIOUS SELECTION BEFORE READING THE NAME
+    /* REMOVE THE PREVIOUS SELECTION BEFORE READING THE NAME*/
     clearInput();
     printf("Enter file name > ");
     fgets(fileName, 100, stdin);
 
-    // POPULATE THE OWNER FIELD; OTHER RECORD FIELDS REMAIN UNFINISHED
+    /* POPULATE THE OWNER FIELD; OTHER RECORD FIELDS REMAIN UNFINISHED*/
     strcpy(newFile.userName, username);
 
-    // LOCATE AN EXTENSION FOR THE PENDING FILE-TYPE ASSIGNMENT
+    /* LOCATE AN EXTENSION FOR THE PENDING FILE-TYPE ASSIGNMENT*/
     char *type = strchr(fileName, '.');
     (void)folderAddress;
     (void)type;

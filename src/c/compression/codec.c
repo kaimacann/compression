@@ -6,14 +6,14 @@
 IMPORTS
 //////////////////////////////////////////////////*/
 
-// SHARED CONTRACT
+/* SHARED CONTRACT*/
 #include "codec.h"
 
 /*//////////////////////////////////////////////////
 CONFIG
 //////////////////////////////////////////////////*/
 
-// BIT STREAMS
+/* BIT STREAMS*/
 typedef struct {
     const unsigned char *p;
     size_t n, at;
@@ -31,7 +31,7 @@ typedef struct {
     int bad;
 } Writer;
 
-// CANONICAL TABLES
+/* CANONICAL TABLES*/
 static const unsigned lbase[29] = {3,  4,  5,  6,  7,  8,  9,  10, 11,  13,  15,  17,  19,  23, 27,
                                    31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
 static const unsigned char lextra[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
@@ -46,7 +46,7 @@ static const unsigned char dextra[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,
 BUFFERS
 //////////////////////////////////////////////////*/
 
-// STORAGE
+/* STORAGE*/
 /**
  * Append bytes to a buffer, growing it up to the shared size limit.
  * @param b Buffer that owns the appended bytes.
@@ -76,7 +76,7 @@ int rcAppend(RcBuffer *b, const void *p, size_t n) {
     return 1;
 }
 
-// CHECKSUMS
+/* CHECKSUMS*/
 /**
  * Compute the PNG CRC-32 used to validate chunks.
  * @param p PNG chunk bytes covered by the checksum.
@@ -126,7 +126,7 @@ static unsigned long be32(const unsigned char *p) {
 DEFLATE
 //////////////////////////////////////////////////*/
 
-// DECODING
+/* DECODING*/
 /**
  * Read low-order bits from the DEFLATE bit stream.
  * @param b DEFLATE bit reader whose cursor advances.
@@ -214,27 +214,27 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
     Bits b = {0};
     int final = 0;
 
-    // VALIDATE THE ZLIB ENVELOPE
-    // Reject unsupported windows and preset dictionaries before reading entropy bits.
+    /* VALIDATE THE ZLIB ENVELOPE*/
+    /* Reject unsupported windows and preset dictionaries before reading entropy bits.*/
     if (n < 6 || (p[0] & 15) != 8 || (p[0] >> 4) > 7 || (((unsigned)p[0] << 8) + p[1]) % 31 ||
         (p[1] & 32))
         return 0;
     b.p = p + 2;
     b.n = n - 6;
 
-    // Decode block alphabets before copying literals or bounded history matches.
+    /* Decode block alphabets before copying literals or bounded history matches.*/
     while (!final && !b.bad) {
         unsigned type;
         Huff lit, dist;
         unsigned char lens[320] = {0}, dl[32] = {0};
         unsigned i;
 
-        // READ THE BLOCK HEADER
+        /* READ THE BLOCK HEADER*/
         final = (int)readBits(&b, 1);
         type = readBits(&b, 2);
         if (type == 0) {
-            // COPY STORED BYTES
-            // Discard bit padding and verify the stored length against its complement.
+            /* COPY STORED BYTES*/
+            /* Discard bit padding and verify the stored length against its complement.*/
             unsigned len, inv;
             b.bits = 0;
             b.count = 0;
@@ -247,7 +247,7 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
             continue;
         }
         if (type == 1) {
-            // BUILD FIXED ALPHABETS
+            /* BUILD FIXED ALPHABETS*/
             for (i = 0; i < 288; i++)
                 lens[i] = (unsigned char)(i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8);
             for (i = 0; i < 32; i++)
@@ -255,8 +255,8 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
             if (!makeHuff(&lit, lens, 288) || !makeHuff(&dist, dl, 32))
                 return 0;
         } else if (type == 2) {
-            // READ DYNAMIC ALPHABETS
-            // The code-length alphabet describes both the literal/length and distance trees.
+            /* READ DYNAMIC ALPHABETS*/
+            /* The code-length alphabet describes both the literal/length and distance trees.*/
             static const unsigned proper[19] = {16, 17, 18, 0, 8,  7, 9,  6, 10, 5,
                                                 11, 4,  12, 3, 13, 2, 14, 1, 15};
             unsigned nl = readBits(&b, 5) + 257, nd = readBits(&b, 5) + 1, nc = readBits(&b, 4) + 4,
@@ -270,8 +270,8 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
             if (!makeHuff(&ch, cl, 19))
                 return 0;
 
-            // EXPAND REPEATED CODE LENGTHS
-            // Repeat symbols must stay within the two declared alphabet lengths.
+            /* EXPAND REPEATED CODE LENGTHS*/
+            /* Repeat symbols must stay within the two declared alphabet lengths.*/
             while (at < nl + nd && !b.bad) {
                 int s = decodeHuff(&b, &ch);
                 unsigned run, value;
@@ -308,7 +308,7 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
         } else
             return 0;
 
-        // DECODE LITERALS AND MATCHES
+        /* DECODE LITERALS AND MATCHES*/
         for (;;) {
             int s = decodeHuff(&b, &lit);
             unsigned len, distance, k;
@@ -334,8 +334,8 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
             if (b.bad || distance > out->size || len > RC_LIMIT - out->size)
                 return 0;
 
-            // COPY THE HISTORY MATCH
-            // Read from the growing output so overlapping LZ77 matches expand correctly.
+            /* COPY THE HISTORY MATCH*/
+            /* Read from the growing output so overlapping LZ77 matches expand correctly.*/
             while (len--) {
                 byte = out->data[out->size - distance];
                 if (!rcAppend(out, &byte, 1))
@@ -344,12 +344,12 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
         }
     }
 
-    // VERIFY THE COMPLETE STREAM
-    // Check input consumption and the Adler checksum before reporting success.
+    /* VERIFY THE COMPLETE STREAM*/
+    /* Check input consumption and the Adler checksum before reporting success.*/
     return !b.bad && b.at == b.n && adler(out->data, out->size) == be32(p + n - 4);
 }
 
-// ENCODING
+/* ENCODING*/
 /**
  * Append a value to the output bit stream, least-significant bit first.
  * @param w Bit writer that receives the encoded value.
@@ -421,8 +421,8 @@ int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
     unsigned char header[2] = {0x78, 0x01}, tail[4];
     unsigned long sum;
 
-    // PREPARE THE HISTORY WINDOW
-    // Hash heads and history links share one allocation and one lifetime.
+    /* PREPARE THE HISTORY WINDOW*/
+    /* Hash heads and history links share one allocation and one lifetime.*/
     if (!head)
         return 0;
     prev = head + 32768;
@@ -434,7 +434,7 @@ int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
     }
     putBits(&w, 3, 3);
 
-    // Bound hash-chain searches so repetitive inputs cannot cause unbounded work.
+    /* Bound hash-chain searches so repetitive inputs cannot cause unbounded work.*/
     while (at < n && !w.bad) {
         unsigned best = 0, dist = 0, hash = 0;
         size_t candidate = (size_t)-1;
@@ -444,8 +444,8 @@ int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
             candidate = head[hash];
         }
 
-        // SEARCH PREVIOUS MATCHES
-        // The chain is bounded by both the 32 KiB window and a fixed attempt count.
+        /* SEARCH PREVIOUS MATCHES*/
+        /* The chain is bounded by both the 32 KiB window and a fixed attempt count.*/
         while (candidate != (size_t)-1 && candidate < at && at - candidate <= 32768 &&
                attempts++ < 64) {
             unsigned match = 0;
@@ -465,8 +465,8 @@ int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
             }
         }
 
-        // EMIT THE SELECTED REPRESENTATION
-        // A match emits length/distance codes; otherwise emit one literal byte.
+        /* EMIT THE SELECTED REPRESENTATION*/
+        /* A match emits length/distance codes; otherwise emit one literal byte.*/
         if (best >= 3) {
             unsigned k = 0;
             while (k < 28 && best >= lbase[k + 1])
@@ -482,7 +482,7 @@ int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
         } else
             fixedSymbol(&w, p[at]);
 
-        // INDEX THE CONSUMED POSITIONS
+        /* INDEX THE CONSUMED POSITIONS*/
         for (j = 0; j < step; j++) {
             size_t pos = at + j;
             if (pos + 2 < n) {
@@ -494,8 +494,8 @@ int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
         at += step;
     }
 
-    // CLOSE THE ZLIB STREAM
-    // Finish the block, pad its last byte, and append the checksum of the original bytes.
+    /* CLOSE THE ZLIB STREAM*/
+    /* Finish the block, pad its last byte, and append the checksum of the original bytes.*/
     fixedSymbol(&w, 256);
     if (w.count)
         putBits(&w, 0, 8 - w.count);
@@ -510,7 +510,7 @@ int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
 PNG
 //////////////////////////////////////////////////*/
 
-// FILTERS
+/* FILTERS*/
 /**
  * Select the PNG Paeth predictor nearest to the three neighbouring bytes.
  * @param a Left neighbouring sample.
@@ -554,8 +554,8 @@ int rcUnfilter(unsigned char *row, const unsigned char *prior, size_t length, si
     size_t x;
     if (filter > 4)
         return 0;
-    // RECONSTRUCT LEFT TO RIGHT
-    // Left neighbours already contain decoded bytes, including for packed colour samples.
+    /* RECONSTRUCT LEFT TO RIGHT*/
+    /* Left neighbours already contain decoded bytes, including for packed colour samples.*/
     for (x = 0; x < length; x++) {
         int a = x >= bpp ? row[x - bpp] : 0, b = prior ? prior[x] : 0,
             c = prior && x >= bpp ? prior[x - bpp] : 0;
@@ -569,7 +569,7 @@ int rcUnfilter(unsigned char *row, const unsigned char *prior, size_t length, si
     return 1;
 }
 
-// IMAGE DECODING
+/* IMAGE DECODING*/
 /**
  * Decode supported PNG colour types, transparency, and Adam7 passes into RGBA8.
  * @param p Complete PNG file bytes.
@@ -590,10 +590,10 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
                           dx[7] = {8, 8, 4, 4, 2, 2, 1}, dy[7] = {8, 8, 8, 4, 4, 2, 2};
     memset(palette, 255, sizeof(palette));
 
-    // Validate chunk order and CRCs before interpreting image samples.
+    /* Validate chunk order and CRCs before interpreting image samples.*/
     while (at + 12 <= n) {
-        // VALIDATE THE NEXT CHUNK
-        // CRC validation covers the chunk type and payload, before either is interpreted.
+        /* VALIDATE THE NEXT CHUNK*/
+        /* CRC validation covers the chunk type and payload, before either is interpreted.*/
         unsigned long length = be32(p + at);
         const unsigned char *name = p + at + 4, *body = p + at + 8;
         if (length > n - at - 12 || rcCrc(name, (size_t)length + 4) != be32(body + length))
@@ -601,8 +601,8 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
         if (!header && memcmp(name, "IHDR", 4))
             goto done;
         if (!memcmp(name, "IHDR", 4)) {
-            // READ IMAGE GEOMETRY
-            // Colour type controls channel count; bit depth controls packed sample extraction.
+            /* READ IMAGE GEOMETRY*/
+            /* Colour type controls channel count; bit depth controls packed sample extraction.*/
             if (header || length != 13)
                 goto done;
             header = 1;
@@ -613,8 +613,8 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
             interlace = body[12];
             if (!w || !h || (size_t)w > RC_PIXELS / h || body[10] || body[11] || interlace > 1)
                 goto done;
-            // CHECK THE COLOUR-TYPE CONTRACT
-            // Zero entries denote reserved colour types; low depths require gray or indexed data.
+            /* CHECK THE COLOUR-TYPE CONTRACT*/
+            /* Zero entries denote reserved colour types; low depths require gray or indexed data.*/
             {
                 static const unsigned char channelCount[7] = {1, 0, 3, 1, 2, 0, 4};
                 if (type > 6 || !(channels = channelCount[type]) ||
@@ -627,8 +627,8 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
             if (haveData || !length || length % 3 || length > 768)
                 goto done;
 
-            // LOAD PALETTE ENTRIES
-            // PNG palettes store RGB triples; transparency is applied by the later tRNS chunk.
+            /* LOAD PALETTE ENTRIES*/
+            /* PNG palettes store RGB triples; transparency is applied by the later tRNS chunk.*/
             paletteCount = (unsigned)length / 3;
             for (i = 0; i < paletteCount; i++)
                 memcpy(palette[i], body + i * 3, 3);
@@ -637,8 +637,8 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
             if (haveData)
                 goto done;
 
-            // READ TRANSPARENCY METADATA
-            // Palette alpha and raw sample transparency keys follow different layouts.
+            /* READ TRANSPARENCY METADATA*/
+            /* Palette alpha and raw sample transparency keys follow different layouts.*/
             if (type == 3) {
                 if (!paletteCount || length > paletteCount)
                     goto done;
@@ -652,8 +652,8 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
             else
                 goto done;
         } else if (!memcmp(name, "IDAT", 4)) {
-            // COLLECT COMPRESSED PIXELS
-            // IDAT chunks form one zlib stream and must remain contiguous.
+            /* COLLECT COMPRESSED PIXELS*/
+            /* IDAT chunks form one zlib stream and must remain contiguous.*/
             if (closedData || !rcAppend(&packed, body, length))
                 goto done;
             haveData = 1;
@@ -674,8 +674,8 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
         at += (size_t)length + 12;
     }
 
-    // ALLOCATE THE DECODED IMAGE
-    // Only inflate after the full chunk envelope and terminal marker have been checked.
+    /* ALLOCATE THE DECODED IMAGE*/
+    /* Only inflate after the full chunk envelope and terminal marker have been checked.*/
     if (!ended || at != n || !rcInflate(packed.data, packed.size, &raw) ||
         (type == 3 && !paletteCount))
         goto done;
@@ -686,10 +686,10 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
     im->height = h;
     passes = interlace ? 7 : 1;
 
-    // Each Adam7 pass has an independent previous-row filter context.
+    /* Each Adam7 pass has an independent previous-row filter context.*/
     for (pass = 0; pass < passes; pass++) {
-        // PREPARE ONE INTERLACE PASS
-        // Each pass writes its smaller raster into strided positions of the final image.
+        /* PREPARE ONE INTERLACE PASS*/
+        /* Each pass writes its smaller raster into strided positions of the final image.*/
         unsigned x0 = interlace ? xs[pass] : 0, y0 = interlace ? ys[pass] : 0,
                  sx = interlace ? dx[pass] : 1, sy = interlace ? dy[pass] : 1;
         unsigned pw = w > x0 ? (w - x0 + sx - 1) / sx : 0, ph = h > y0 ? (h - y0 + sy - 1) / sy : 0,
@@ -701,16 +701,16 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
         if (rowBytes + 1 > raw.size || ph > (raw.size - cursor) / (rowBytes + 1))
             goto done;
         for (y = 0; y < ph; y++) {
-            // RECONSTRUCT ONE ROW
-            // Reuse the inflated storage; earlier rows remain available as predictor context.
+            /* RECONSTRUCT ONE ROW*/
+            /* Reuse the inflated storage; earlier rows remain available as predictor context.*/
             unsigned filter = raw.data[cursor++];
             row = raw.data + cursor;
             cursor += rowBytes;
             if (!rcUnfilter(row, prior, rowBytes, bpp, filter))
                 goto done;
 
-            // EXPAND SAMPLES TO RGBA
-            // Retain alpha and compare transparency keys before reducing source precision.
+            /* EXPAND SAMPLES TO RGBA*/
+            /* Retain alpha and compare transparency keys before reducing source precision.*/
             for (x = 0; x < pw; x++) {
                 unsigned samples[4] = {0, 0, 0, 255}, j;
                 unsigned char *pixel = im->rgba + ((size_t)(y0 + y * sy) * w + x0 + x * sx) * 4;
@@ -744,7 +744,7 @@ static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
         }
     }
 
-    // VERIFY AND RELEASE DECODER STATE
+    /* VERIFY AND RELEASE DECODER STATE*/
     if (cursor != raw.size)
         goto done;
     ok = 1;
@@ -762,7 +762,7 @@ done:
 API
 //////////////////////////////////////////////////*/
 
-// FORMAT DISPATCH
+/* FORMAT DISPATCH*/
 /**
  * Select a decoder from the file signature and return owned RGBA8 pixels.
  * @param p PNG or JPEG file bytes, identified by signature.
