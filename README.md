@@ -1,29 +1,51 @@
 # Compression Project Docs
 
-Assessment material, project specifications, and a practical guide to the C compression repository. Canvas remains authoritative for assessment requirements, dates, and marking decisions.
+Assessment material and a practical guide to the C compression repository. Canvas remains authoritative for assessment requirements, dates, and marking decisions.
 
-## Get started
+## Start here
 
-The Docs site requires Node.js and pnpm 10.30.3. The C program requires a C11 compiler and Make.
+Requirements: Node.js, pnpm 10.30.3, a C11 compiler available as `cc`, and Make. Run these commands from the repository root:
 
 ```sh
-pnpm install
-pnpm docs
+pnpm install --frozen-lockfile
 make run
 ```
 
-`pnpm docs` starts the shared Docs site on its assigned local port. `make run` builds and runs the C program.
+The first command installs the locked Docs dependencies. `make run` builds `compression-demo` when its sources are newer, then opens its interactive menu. Enter a menu choice and follow the prompts. The program checks that the input can be read before asking for any further details. For PNG, JPEG, and PDF inputs, choose to preserve the media unchanged or use Terra sketch vectorization. Vector mode is intentionally aggressive: its two-colour default targets simple, low-detail, single-ink sketches, can discard important detail, and is not general-purpose image compression. Keep the original when fidelity matters. PDF mode rebuilds a smaller PDF when possible and exports SVG sidecars; image inputs produce SVG. Ordinary files use the lossless `TCMP` byte archive. Leave the output blank to use a sibling name: unchanged media keeps its extension, vectorized images use `.svg`, PDFs keep `.pdf`, and byte archives use `.tcmp` (for example, `test.jpeg` becomes `test-compressed.svg` in vector mode). `decompress` restores only `TCMP` archives; SVG vectorization is lossy and cannot be reversed. To stop the menu, choose its exit option; `Ctrl+C` also stops it.
 
-## Build and clean
+## Makefile walkthrough
 
-Run `pnpm build` to build the Docs site under `dist/docs`. Run `make` to build the C executable and `make clean` to remove build output.
+The Makefile builds one executable from `src/c/main` and `src/c/compression`. `SOURCES` lists its C translation units; `HEADERS` lists headers whose changes must trigger a rebuild. `$(CC)` is the compiler, `$(CPPFLAGS)` supplies preprocessor options, `$(CFLAGS)` selects C11 and warning flags, and `$(LDLIBS)` links the math library. Override them on the command line when needed, for example `make CC=clang` or `make CFLAGS='-std=c11 -Wall -Wextra -pedantic -g -O0'`.
 
-## Documentation
+| Command                 | Purpose                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------ |
+| `make`                  | Build `compression-demo`; this is the default target.                                      |
+| `make run`              | Build if needed, then run the interactive menu.                                            |
+| `make clean`            | Remove the executable and root-level Clang analyzer `.plist` files.                        |
+| `make check-doc-params` | List documented C functions that lack `@param` tags; exit unsuccessfully if any are found. |
+| `make format-c`         | Format the executable's listed C sources and headers in place; requires `clang-format`.    |
+| `make format-c-check`   | Check that same formatting without changing files.                                         |
+
+`make run` is the normal command for demonstrating the program. Use `make` when you only need a fresh executable, and `make clean && make` to force a complete rebuild. The Makefile does not install the executable globally; run it from the repository with `./compression-demo` after building.
+
+## Docs and quality commands
+
+| Command                   | Purpose                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `pnpm run docs`           | Start the local Docs development server on port 3010. Stop it with `Ctrl+C`.                      |
+| `pnpm run build`          | Build the static Docs site under `dist/docs`.                                                     |
+| `pnpm run quality`        | Run configured quality checks, including the C build and parameter-documentation check.           |
+| `pnpm run format`         | Format the README and editable Docs Markdown in place; the verbatim assessment brief is excluded. |
+| `pnpm run format:c`       | Run `make format-c`.                                                                              |
+| `pnpm run format:c:check` | Run `make format-c-check`.                                                                        |
+| `pnpm run docs:doxygen`   | Generate the C API reference under `dist/doxygen`; requires Doxygen.                              |
+
+## Project material
 
 - [Assessment](docs/assessment/): assignment information and separately labelled business and technical specifications.
 - [Compression guide](docs/compression/): installation, command-line use, file handling, and reference material.
 
-The C program is a coursework project. Do not treat its encryption features as a security recommendation.
+The C program is a coursework project. It does not encrypt files; vector mode is lossy, and `TCMP` is not a standard archive format.
 
 ## License
 

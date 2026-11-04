@@ -5,10 +5,10 @@ description: Install the toolchain, build the compression program, and run a com
 
 ## Get started
 
-The repository provides a C11 command-line tool for lossless byte compression, restoration, inspection, and search. It writes the project-specific `TCMP` v1 container; it does not claim compatibility with ZIP, gzip, or another standard archive format. Continue to [File handling](./guide/file-handling/) for container and output behaviour, or [Reference and troubleshooting](./guide/reference/) for commands and diagnostics.
+The repository provides a C11 command-line tool for lossless byte archiving, restoration, inspection, search, and PNG/JPEG/PDF image processing. Byte archives use the project-specific `TCMP` v1 container. Media vectorization is intentionally aggressive and tuned for Terra's simple, low-detail, single-ink sketch use; it is lossy and is not general-purpose image compression. Keep the source image when detail or colour fidelity matters. Continue to [File handling](./guide/file-handling/) for format boundaries, or [Reference and troubleshooting](./guide/reference/) for commands and diagnostics.
 
 :::warning[Data and security boundary]
-The program does not encrypt files or process PDF structures or image pixels. `TCMP` is a learning-project format, not a security, backup, or general interchange format. Keep source files and use copies for experiments.
+The executable does not encrypt files. `TCMP` is a learning-project format, not a security, backup, or general interchange format. Vector mode discards image information for Terra-style sketches and is not a general-purpose image compressor. Keep source files and use copies for experiments.
 :::
 
 ## Install the toolchain
@@ -90,55 +90,20 @@ Run Make commands from the repository root. The default target compiles the C so
     </tr>
     <tr>
       <td>
-        <code>make clean &amp;&amp; make</code>
-      </td>
-      <td>Remove generated build output and rebuild.</td>
-    </tr>
-    <tr>
-      <td>
-        <code>make debug</code>
-      </td>
-      <td>Build with debug logging, symbols, and no optimisation.</td>
-    </tr>
-    <tr>
-      <td>
-        <code>make release</code>
-      </td>
-      <td>Build with optimisation enabled.</td>
-    </tr>
-    <tr>
-      <td>
         <code>make run</code>
       </td>
       <td>Build if needed and open the interactive menu.</td>
     </tr>
     <tr>
       <td>
-        <code>make install PREFIX="$HOME/.local"</code>
-      </td>
-      <td>
-        Install to <code>$HOME/.local/bin</code> without administrator access.
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <code>make uninstall PREFIX="$HOME/.local"</code>
-      </td>
-      <td>Remove that user-local installation.</td>
-    </tr>
-    <tr>
-      <td>
         <code>make clean</code>
       </td>
-      <td>
-        Remove the executable and root-level Clang analyzer <code>*.plist</code>{" "}
-        files.
-      </td>
+      <td>Remove the executable and root-level analyzer output.</td>
     </tr>
   </tbody>
 </table>
 
-Add `$HOME/.local/bin` to `PATH` if the shell does not already search it. To install system-wide, use the default `/usr/local` prefix with the permissions required by your operating system.
+See the repository [README](../../README.md) for the Makefile walkthrough and all project commands.
 
 ## Run a complete round trip
 
@@ -162,7 +127,7 @@ compression-demo inspect <input>
 compression-demo search <input> <literal-text>
 compression-demo --help`}</Code>
 
-The same actions are available from `make run` or `./compression-demo`: compress, decompress, inspect, search, then exit. The `inspect` mode reports byte frequencies in sorted order. The `search` mode uses Knuth–Morris–Pratt and prints up to the first 20 zero-based match offsets.
+The interactive menu opened by `make run` or `./compression-demo` supports archive compression, decompression, and exit. Use command-line modes for `inspect` and `search`: `inspect` reports byte frequencies in sorted order, while `search` uses Knuth–Morris–Pratt and prints up to the first 20 zero-based match offsets.
 
 ### Examples
 
@@ -173,7 +138,14 @@ Use new destination paths for each run. The compression command leaves its sourc
 ./compression-demo inspect "samples/sample.txt"
 ./compression-demo search "samples/sample.txt" "compression"`}</Code>
 
-If either output already exists, the program refuses to replace it. Remove or rename the destination yourself before retrying.
+## Process PNG, JPEG, and PDF images
+
+`process` checks file signatures, so the extension does not determine the format. Lossless mode validates PNG/JPEG input and copies it unchanged. Vector mode decodes PNG or JPEG pixels, quantizes colours, traces SVG paths, and writes an SVG. For PDFs, it processes supported embedded image objects, exports SVG sidecars, and keeps the rebuilt PDF only when it is valid and smaller. Unsupported PDF objects remain in the copied or rebuilt document and are reported.
+
+<Code language="bash">{`./compression-demo process samples/bald.png bald.svg --mode vector --colors 32 --tolerance 0.5
+./compression-demo process samples/image-stream.pdf vectorized.pdf --mode vector --svg-dir vector-images`}</Code>
+
+Use `--force` only when replacing existing output paths is intentional. Create the `--svg-dir` directory before running the command. The default palette is 16 colours and contour tolerance is 0.5 pixels; allowed values are 2–256 colours and 0–2 pixels. Vectorization changes image appearance, and an SVG may be larger than its raster source.
 
 ## Run the documentation site
 
@@ -195,7 +167,7 @@ The Docs site is independent of the C executable. From the repository root, inst
     </tr>
     <tr>
       <td>
-        <code>pnpm docs:dev</code>
+        <code>pnpm run docs</code>
       </td>
       <td>
         Start the local Docs development server; stop it with{" "}
@@ -204,7 +176,7 @@ The Docs site is independent of the C executable. From the repository root, inst
     </tr>
     <tr>
       <td>
-        <code>pnpm docs:build</code>
+        <code>pnpm run build</code>
       </td>
       <td>
         Build static pages under <code>dist/docs/</code>.
@@ -212,23 +184,31 @@ The Docs site is independent of the C executable. From the repository root, inst
     </tr>
     <tr>
       <td>
-        <code>pnpm docs:preview</code>
+        <code>pnpm run quality</code>
       </td>
-      <td>Build and serve the static site locally.</td>
+      <td>
+        Run the repository quality checks configured in
+        <code>config/quality.json</code>.
+      </td>
     </tr>
     <tr>
       <td>
-        <code>pnpm check:markdown</code>
+        <code>pnpm run format:c</code>
       </td>
-      <td>Check Markdown formatting without changing files.</td>
+      <td>Format the C sources with the configured clang-format style.</td>
     </tr>
     <tr>
       <td>
-        <code>pnpm format:markdown</code>
+        <code>pnpm run format:c:check</code>
+      </td>
+      <td>Check C formatting without changing files.</td>
+    </tr>
+    <tr>
+      <td>
+        <code>pnpm run docs:doxygen</code>
       </td>
       <td>
-        Format editable Markdown in place; the verbatim assignment brief is
-        excluded.
+        Generate the Doxygen reference under <code>dist/doxygen/</code>.
       </td>
     </tr>
   </tbody>

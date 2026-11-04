@@ -14,12 +14,17 @@ Run the executable from the repository root or provide paths relative to the cur
     <tr><td><code>./compression-demo decompress &lt;input.tcmp&gt; &lt;output&gt;</code></td><td>Validate and restore bytes from a <code>TCMP</code> frame.</td></tr>
     <tr><td><code>./compression-demo inspect &lt;input&gt;</code></td><td>Report file size and the ten most frequent byte values.</td></tr>
     <tr><td><code>./compression-demo search &lt;input&gt; &lt;literal-text&gt;</code></td><td>Search literal bytes and print matching offsets.</td></tr>
+    <tr><td><code>./compression-demo process &lt;input&gt; &lt;output&gt; --mode lossless|vector [options]</code></td><td>Validate PNG/JPEG/PDF input; vector mode writes SVG output and supported PDF image replacements.</td></tr>
     <tr><td><code>./compression-demo --help</code></td><td>Print command syntax.</td></tr>
     <tr><td><code>./compression-demo</code></td><td>Start the interactive menu.</td></tr>
   </tbody>
 </table>
 
-The process exits with status `0` after success, `1` after an operation failure, and `2` for unsupported command syntax. Existing output paths are never replaced.
+Process options are `--svg-dir &lt;directory&gt;`, `--colors 2..256`, `--tolerance 0..2`, and `--force`. The `--svg-dir` directory must already exist. Existing outputs are rejected unless `--force` is supplied to `process`.
+
+Vector mode defaults to two palette colours and a one-pixel contour tolerance. This intentionally aggressive setting targets simple, low-detail Terra sketches; it is lossy, may remove meaningful features, and is not general-purpose image compression. Keep the original when fidelity matters. PDF processing writes a rebuilt PDF when the candidate is smaller and exports embedded images as SVG sidecars.
+
+The program exits with status `0` after success and `1` after an operation or syntax failure.
 
 ## Build targets
 
@@ -28,26 +33,24 @@ The process exits with status `0` after success, `1` after an operation failure,
   <tbody>
     <tr><td><code>make</code></td><td>Build with the configured C11 compiler and warning flags.</td></tr>
     <tr><td><code>make run</code></td><td>Build if needed, then start the interactive menu.</td></tr>
-    <tr><td><code>make debug</code></td><td>Build with the <code>DEBUG</code> preprocessor symbol, symbols, and no optimisation.</td></tr>
-    <tr><td><code>make release</code></td><td>Build with optimisation.</td></tr>
-    <tr><td><code>make install PREFIX="$HOME/.local"</code></td><td>Install the executable under the selected prefix.</td></tr>
-    <tr><td><code>make uninstall PREFIX="$HOME/.local"</code></td><td>Remove it from that prefix.</td></tr>
     <tr><td><code>make clean</code></td><td>Remove the executable and root-level analyzer output.</td></tr>
+    <tr><td><code>make check-doc-params</code></td><td>List documented C functions that lack <code>@param</code> tags.</td></tr>
   </tbody>
 </table>
 
-The default build uses only the standard C headers `stdio.h`, `stdlib.h`, and `string.h`. It has no third-party C dependencies. The implementation uses the C11 `fopen` exclusive-create mode for output safety.
+The default build uses only the permitted standard C headers `stdio.h`, `stdlib.h`, `string.h`, and `math.h`. It has no third-party C dependencies. The implementation uses the C11 `fopen` exclusive-create mode for output safety.
 
 ## Public C interface
 
 `src/c/compression/compression.h` provides the path-based operations. Each function returns `1` on success and `0` on failure.
 
-<Code language="c">{`int compressFile(const char *inputPath, const char *outputPath);
+<Code language="c">{`int archiveFile(const char *inputPath, const char *outputPath);
 int decompressFile(const char *inputPath, const char *outputPath);
 int inspectFile(const char *inputPath);
-int searchFile(const char *inputPath, const char *pattern);`}</Code>
+int searchFile(const char *inputPath, const char *pattern);
+int processMedia(const char *inputPath, const char *outputPath, const MediaOptions *options);`}</Code>
 
-File input and exclusive output creation are isolated in `src/c/fileIO/`. The compression module owns the `TCMP` framing and Huffman tree. The interactive and command-line interfaces are in `src/c/main/main.c`.
+The compression module owns file streams, `TCMP` framing, and the Huffman tree. Media staging and PDF/image processing live under `src/c/compression/`. The interactive and command-line interfaces are in `src/c/main/main.c`.
 
 ## Troubleshooting
 
@@ -69,14 +72,15 @@ File input and exclusive output creation are isolated in `src/c/fileIO/`. The co
 <table>
   <thead><tr><th>Area</th><th>Current behaviour</th></tr></thead>
   <tbody>
-    <tr><td>Input</td><td>Opaque bytes from a seekable file; file extension does not affect processing.</td></tr>
+    <tr><td>Input</td><td>Archive commands read opaque bytes; <code>process</code> detects PNG, JPEG, and PDF from signatures.</td></tr>
     <tr><td>Compression</td><td>Deterministic Huffman coding when its complete frame is smaller than the raw frame; otherwise raw framing.</td></tr>
     <tr><td>Decompression</td><td>Raw and Huffman <code>TCMP</code> v1 frames, with declared-size, frequency, and FNV-1a checksum validation.</td></tr>
     <tr><td>Inspection</td><td>Byte count and sorted byte-frequency summary.</td></tr>
     <tr><td>Search</td><td>Literal byte sequence search with Knuth–Morris–Pratt; no semantic document parsing.</td></tr>
     <tr><td>Output</td><td>New file only; existing destinations are rejected; incomplete outputs are removed after detected failures when the filesystem permits.</td></tr>
-    <tr><td>Encryption</td><td>Not implemented by this executable.</td></tr>
-    <tr><td>PDF and image processing</td><td>Not implemented; files are handled as byte streams.</td></tr>
+    <tr><td>Encryption</td><td>Not included in the executable.</td></tr>
+    <tr><td>Raster images</td><td>PNG and baseline/progressive JPEG decode to RGBA; vector mode quantizes and traces them to SVG.</td></tr>
+    <tr><td>PDF</td><td>Vector mode processes supported embedded image streams, exports SVG sidecars, preserves other page objects, and selects a rebuilt PDF only when smaller. Unsupported objects are retained and reported.</td></tr>
     <tr><td>Interoperability</td><td><code>TCMP</code> is private to this repository and is not ZIP, gzip, zlib, or a published standard.</td></tr>
   </tbody>
 </table>

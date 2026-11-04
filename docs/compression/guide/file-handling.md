@@ -1,15 +1,15 @@
 ---
 title: File handling
-description: TCMP framing, streaming behaviour, output safeguards, and supported input boundaries.
+description: TCMP framing, PNG/JPEG/PDF processing, output safeguards, and supported boundaries.
 ---
 
 ## Processing model
 
-The program processes files as byte streams. It does not infer a file format from the extension, decode images, or rewrite document structures.
+The program has two paths. `compress` and `decompress` treat input as bytes and use the private `TCMP` container. `process` identifies PNG, JPEG, and PDF by signature, decodes supported raster images, and can create vector outputs. Extensions do not select formats.
 
 Compression reads the input once to count byte frequencies and again to write the selected frame. Huffman coding builds a deterministic binary tree from those counts and emits each symbol's prefix code. When the Huffman frame would not be smaller than a raw frame, the container stores the original bytes instead.
 
-Decompression validates the container header, reconstructs the tree from the stored frequency table, and restores exactly the declared number of bytes. It checks the decoded frequencies, padding bits, and end of file before reporting success.
+Decompression validates the container header, reconstructs the tree from the stored frequency table, and restores exactly the declared number of bytes. It checks decoded frequencies, padding bits, checksum, and end of file before reporting success. Media processing reads the complete source and commits outputs only after candidates validate.
 
 ## TCMP v1 container
 
@@ -38,11 +38,11 @@ The decoder validates an FNV-1a 64 checksum of the original bytes. It can detect
 
 ## File safety and resource use
 
-The source is opened in binary read mode and is never modified. The program refuses to create an output if the destination already exists; use a new path for each operation. Output creation uses C11 exclusive-create mode, so an existing path is never replaced.
+The source is opened in binary read mode and is never modified. The program refuses to create an output if the destination already exists; use a new path or pass `--force` to `process` when replacement is intentional. Archive output uses C11 exclusive-create mode; media outputs are staged and validated before commit.
 
 Input and output are streamed through a fixed-size buffer, with a 256-entry frequency table and bounded Huffman tree. The program does not load the complete file into memory. Compression requires a seekable input because it scans the file twice. On a detected write or decode failure, the program removes the incomplete output and reports if removal fails.
 
-No format-specific metadata is preserved because the executable treats the input as opaque bytes. Search also scans literal bytes; it does not decompress a `TCMP` container or search document semantics.
+Byte archiving preserves all source bytes but does not preserve format metadata as separate fields. Media vectorization rewrites supported image content and may be lossy. Search scans literal bytes; it does not decompress a `TCMP` container or search document semantics.
 
 ## Search and inspection
 
@@ -52,6 +52,6 @@ No format-specific metadata is preserved because the executable treats the input
 
 ## Security and implementation boundary
 
-The program performs lossless compression only. It does not encrypt content, authenticate users, store passwords, protect data at rest, or provide an API or hosted review interface. The separate `src/c/encryption/` code is excluded from the executable and describes its educational XOR stream as insecure; do not use it for sensitive data.
+The executable does not encrypt content, authenticate users, store passwords, protect data at rest, or provide an API or hosted review interface. The separate educational encryption code is excluded from the executable.
 
-The authored business and technical specifications describe proposals that require further scope and dependency decisions. They do not mean this CLI implements image optimisation, PDF rewriting, storage services, encryption, or an API.
+The authored business and technical specifications describe proposals that require further scope and dependency decisions. This CLI does not implement the proposed storage services or hosted API.
