@@ -1,187 +1,138 @@
 #include "../file.c"
-/**
- * Header file with function prototypes relating to file selection and output
- * All functions have been created, and will be implemented by Haadi Anwary - 25578814
- */
 
 /**
- * Creates a list of selected files and files to display.
- * Helps user find and select the files they want.
- * 
- * Inputs:
- * - void
- * 
- * Outputs:
- * - Number of outputted files
+ * Report the current saved-file browsing placeholder result.
+ * @return 0 because saved-file browsing is not implemented.
+ * @author haadi
  */
 int browseFiles(void);
 
 /**
- * Displays the given file list with a set amount of files per page.
- * Can navigate through pages
- * 
- * Inputs:
- * - file list to display
- * - number of files in that list
- * - the amount of files to display per page
-*/
+ * Display a page of search results.
+ * @param fileList Files to display.
+ * @param totalFiles Number of entries in fileList.
+ * @param filesPerPage Maximum entries per page.
+ * @author haadi
+ */
 void displaySearch(file_t fileList[], int totalFiles, int filesPerPage);
 
 /**
- * Writes the metadata of all saved files to the file list.
- * Overwrites data if there is anything on the list.
- * 
- * Inputs:
- * - file list to populate
- * 
- * Outputs:
- * - number of files from the metadata
-*/
+ * Load saved metadata into a file list.
+ * @param fileList Destination for loaded records.
+ * @return Number of records loaded.
+ * @author haadi
+ */
 int readMetadata(file_t fileList[]);
 
 /**
- * Allows user to type in type commands to sort / filter their search
- * 
- * inputs:
- * - file list to modify
- * - pointer to the number of files on that list
- * 
- * outputs:
- * - Modifies the file list depending on query
+ * Read a query and update the search results.
+ * @param fileListp Records to sort or filter.
+ * @param totalFiles Number of records; updated when the list changes.
+ * @author haadi
  */
-void modifySearch(file_t fileListp[], int* totalFiles);
+void modifySearch(file_t fileListp[], int *totalFiles);
 
 /**
- * Displays a help menu to help users with command prompts
- * 
- * Inputs:
- * - void
- * 
- * Outputs:
- * - void
+ * Display command help.
+ * @author haadi
  */
 void displayHelpMenu(void);
 
 /**
- * Takes the sort section of the prompt and rearranges list to follow
- * 
- * Inputs:
- * - string of the sort portion of the command prompt
- * - the file list to be sorted
- * - the number of files on that list
+ * Apply the requested sort operation.
+ * @param sort Sort selector from the query.
+ * @param fileList Records to reorder.
+ * @param totalFiles Number of records.
+ * @author haadi
  */
 void sort(char sort, file_t fileList[], int totalFiles);
 
 /**
- * sorts a given list alphabetically, or reverse alphabetically
- * 
- * Inputs:
- * - the file list
- * - the length of that list
- * - Orientation of conversion 
+ * Sort records by filename.
+ * @param fileList Records to reorder.
+ * @param totalFiles Number of records.
+ * @param isReversed Nonzero for reverse order.
+ * @author haadi
  */
 void sortAlphabetical(file_t fileList[], int totalFiles, int isReversed);
 
 /**
- * sorts a given list by size
- * 
- * Inputs:
- * - the file list
- * - the length of that list
- * - Orientation of conversion 
+ * Sort records by file size.
+ * @param fileList Records to reorder.
+ * @param totalFiles Number of records.
+ * @param isReversed Nonzero for reverse order.
+ * @author haadi
  */
 void sortSize(file_t fileList[], int totalFiles, int isReversed);
 
 /**
- * Filters out list of files based apon command prompt
- * 
- * Inputs:
- * - filter portion of command prompt string
- * - list to be filtered
- * - pointer to the size of that list
- * 
- * Outputs:
- * - modifies the list it was given
+ * Apply a filter expression to the record list.
+ * @param filter Filter expression from the query.
+ * @param fileList Records to filter.
+ * @param totalFiles Number of records; updated when entries are removed.
+ * @author haadi
  */
-void filter(char filter[], file_t fileList[], int* totalFiles);
+void filter(char filter[], file_t fileList[], int *totalFiles);
 
 /**
- * Filters out files that don't have a portion of a string included in their names
- * 
- * Inputs:
- * - search string to be included
- * - file list to be modified
- * - pointer to the number of files on that list
+ * Keep records whose filenames contain the search text.
+ * @param search Text to find in each filename.
+ * @param fileList Records to inspect.
+ * @param totalFiles Number of records.
+ * @author haadi
  */
 void fileIncludes(char search[], file_t fileList[], int totalFiles);
 
 /**
- * Filters out files that aren't owned by the given user
- * 
- * Inputs:
- * - string of the owners username
- * - file list to be modified
- * - pointer to the number of files on that list
+ * Keep records owned by the requested user.
+ * @param ownerName Owner name to match.
+ * @param fileList Records to inspect.
+ * @param totalFiles Number of records.
+ * @author haadi
  */
 void filterOwner(char ownerName[], file_t fileList[], int totalFiles);
 
 /**
- * Filters out files of a specific type
- * 
- * Inputs:
- * - char of the file type. (d= document, i= image)
- * - file list to be modified
- * - pointer to the number of files on that list
+ * Keep records matching the requested file type.
+ * @param fileType Type selector: d for document or i for image.
+ * @param fileList Records to inspect.
+ * @param totalFiles Number of records.
+ * @author haadi
  */
 void filterFileType(char fileType, file_t fileList[], int totalFiles);
 
 /**
- * Takes the selected files and gives each file to be handled
- * 
- * Inputs:
- * - list of selected files
- * - total amount of files selected
- * 
- * Outputs
- * - if the file output was successful (int)
+ * Process the selected records for output.
+ * @param selectedFileList Records selected for output.
+ * @param totalSelected Number of selected records.
+ * @return Status indicating whether output succeeded.
+ * @author haadi
  */
 int outputFiles(file_t selectedFileList[], int totalSelected);
 
 /**
- * prepares to output each file
- * de-encrypts and decompresses the files before outputting
- * Writes the file to the output folder
- * 
- * Inputs:
- * - pointer to the file
- * - address of the output folder
- * 
- * Outputs:
- * - if it was successful
+ * Restore and write one selected record.
+ * @param file Record to restore.
+ * @param outputFolderAdr Destination folder path.
+ * @return Status indicating whether output succeeded.
+ * @author haadi
  */
-int handleFileOutput(file_t* file, char outputFolderAdr[]);
+int handleFileOutput(file_t *file, char outputFolderAdr[]);
 
 /**
- * Reads the binary data file of the associated file metadata (matched with fileID)
- * Stores a pointer to that data in the file metadata struct
- * 
- * Inputs:
- * - pounter to the file
- * 
- * Outputs:
- * - if it was successful (int)
+ * Read a record's stored binary data.
+ * @param pointer Record whose data is populated.
+ * @return Status indicating whether the read succeeded.
+ * @author haadi
  */
-int readFileBinary(file_t* pointer);
+int readFileBinary(file_t *pointer);
 
-/*//////////////////////////////////////////////////
-BINARY OUTPUT
-//////////////////////////////////////////////////*/
 /**
- * Writes a complete byte buffer to a destination file.
- *
+ * Write a complete byte buffer to a destination file.
  * @param outputPath Destination path for the generated data.
- * @param data Bytes to write; it may be NULL only when dataSize is zero.
+ * @param data Bytes to write; NULL is valid only when dataSize is zero.
  * @param dataSize Number of bytes in data.
- * @return 1 when the complete buffer is written, or 0 on invalid input or I/O failure.
+ * @return 1 when the full buffer is written, or 0 on invalid input or I/O failure.
+ * @author haadi
  */
 int writeOutputFile(const char *outputPath, const unsigned char *data, size_t dataSize);

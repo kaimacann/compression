@@ -1,5 +1,11 @@
 #include "login.h"
 
+/** Prompt for the first account and write the current credential table to disk.
+ * @param credentials Fixed-size username/password rows; the new account is appended here.
+ * @param num_credentials Current row count, incremented after input is accepted.
+ * @return 0 when account creation and file writing succeed; otherwise 1.
+ * @author marceline
+ */
 int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials) { //This is being passed a pointer to the start of the 2d array.
     if (*num_credentials < MAX_ACCOUNTS) {
         FILE *file = fopen(ACCOUNT_FILE, "wb");
@@ -25,7 +31,7 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
         for (i; i < *num_credentials; i++) {
             int j = 0;
             for (j; j < 2; j++){
-                fwrite(credentials[i][j], sizeof(char), CREDENTIAL_LENGTH, file); 
+                fwrite(credentials[i][j], sizeof(char), CREDENTIAL_LENGTH, file);
             }
         }
 
@@ -38,6 +44,12 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
     }
 }
 
+/** Load fixed-width credential records, prompting to create the first account if absent.
+ * @param credentials Caller-owned table with room for MAX_ACCOUNTS records.
+ * @param num_credentials Existing record count to increment as rows are loaded.
+ * @return 0 when records load or first-account creation succeeds; otherwise 1.
+ * @author marceline
+ */
 int loadCredentials (char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials) {
     FILE *file = fopen(ACCOUNT_FILE, "rb");
     if (file == NULL) {
@@ -62,6 +74,12 @@ int loadCredentials (char credentials[][2][CREDENTIAL_LENGTH], int *num_credenti
     return 0; // Success: credentials loaded.
 }
 
+/** Prompt until credentials match a loaded row or the user requests exit.
+ * @param credentials Fixed-width account records to compare with user input.
+ * @param num_credentials Number of initialized records in the table.
+ * @return 0 for a match; 1 for input failure or the -1 exit command.
+ * @author marceline
+ */
 int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentials) {
     char username[CREDENTIAL_LENGTH];
     char password[CREDENTIAL_LENGTH];
@@ -99,6 +117,10 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
     }
 }
 
+/** Load or create local credentials, then run the interactive authentication prompt.
+ * @return 1 if loading or initial account creation fails; otherwise 0 after the prompt exits.
+ * @author marceline
+ */
 int loginFunction() {
     char credentials[MAX_ACCOUNTS][2][CREDENTIAL_LENGTH]; // Creates 3D array to hold usernames and passwords.
     int num_credentials = 0;
@@ -110,7 +132,7 @@ int loginFunction() {
     if (authenticateUser(credentials, num_credentials) == 0) {
         printf("Logged in successfully.");
     }
-    
+
     printf("Exiting program.\n");
 
     return 0; // Success

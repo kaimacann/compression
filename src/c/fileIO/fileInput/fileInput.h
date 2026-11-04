@@ -14,6 +14,7 @@ PUBLIC API
  *
  * @param username Owner copied into the temporary file record.
  * @return 1 after the selection flow is invoked.
+ * @author haadi
  */
 int selectFiles(char username[]);
 
@@ -21,6 +22,7 @@ int selectFiles(char username[]);
  * Prints a numbered listing of the entries in the supplied folder.
  *
  * @param folderAddress Path passed to the existing listing command.
+ * @author haadi
  */
 void displayFiles(char folderAddress[]);
 
@@ -30,6 +32,7 @@ void displayFiles(char folderAddress[]);
  * @param folderAddress Folder associated with the selection; currently unused by the prompt.
  * @param username Owner copied into the record.
  * @return A record with its owner set; filename and type handling remain unfinished.
+ * @author haadi
  */
 file_t createFile(char folderAddress[], char username[]);
 
@@ -38,6 +41,7 @@ file_t createFile(char folderAddress[], char username[]);
  * Displays entries in the current folder and prompts for navigation or selection.
  *
  * @param folderAddress Current path, which navigation may update.
+ * @author haadi
  */
 void displayFolder(char folderAddress[]);
 
@@ -45,6 +49,7 @@ void displayFolder(char folderAddress[]);
  * Prompts for a folder path and updates the caller's path buffer.
  *
  * @param folderAddress Path buffer to update.
+ * @author haadi
  */
 void inputFolderAddress(char folderAddress[]);
 
@@ -58,6 +63,7 @@ void inputFolderAddress(char folderAddress[]);
  * @param inputPath Source path to read in binary mode.
  * @param fileP Record populated with the bytes, size, name, and type.
  * @return 1 when the complete file was read, or 0 on invalid input or I/O failure.
+ * @author haadi
  */
 int readInputFile(const char *inputPath, file_t *fileP);
 
@@ -68,6 +74,7 @@ int readInputFile(const char *inputPath, file_t *fileP);
  * @param listLength Number of records in fileInList.
  * @param username Owner assigned to processed records.
  * @return Number of records successfully processed.
+ * @author haadi
  */
 int inputFiles(file_t fileInList[], int listLength, char username[]);
 
@@ -75,6 +82,7 @@ int inputFiles(file_t fileInList[], int listLength, char username[]);
  * Generates a random string of 14 characters for use as a file ID.
  *
  * @return Pointer to the generated identifier.
+ * @author haadi
  */
 char *generateFileId(void);
 
@@ -83,6 +91,7 @@ char *generateFileId(void);
  *
  * @param fileP Record to process.
  * @return Status indicating whether processing succeeded.
+ * @author haadi
  */
 int handleFileInput(file_t *fileP);
 
@@ -91,6 +100,7 @@ int handleFileInput(file_t *fileP);
  *
  * @param fileP Record to store.
  * @return Status indicating whether storage succeeded.
+ * @author haadi
  */
 int storeFile(file_t *fileP);
 
@@ -99,6 +109,7 @@ int storeFile(file_t *fileP);
  *
  * @param fileP Record whose bytes should be written.
  * @return Status indicating whether the write succeeded.
+ * @author haadi
  */
 int writeFile(file_t *fileP);
 
@@ -107,5 +118,6 @@ int writeFile(file_t *fileP);
  *
  * @param fileP Record whose metadata should be written.
  * @return Status indicating whether the write succeeded.
+ * @author haadi
  */
 int writeMetaData(file_t *fileP);

@@ -1,17 +1,27 @@
 #include "encryption.h"
 
+/** Initialize the stream state used by the reversible XOR transform.
+ * @param cipher State object to initialize; it must be non-null.
+ * @param key Nonzero seed for the xorshift byte stream.
+ * @return 0 when initialized, or 1 for a null state or zero key.
+ * @author marceline
+ */
 int initCipher(streamcipher_t *cipher, unsigned long long key) {
     if (cipher == NULL || key == 0) {
         return 1; //  Failure
     }
-    
+
     cipher->state = key;
     cipher->random_value = 0;
-    cipher->bytes_available = 0; 
+    cipher->bytes_available = 0;
 
     return 0; //Success
 }
 
+/** Advance the generator and make its next eight bytes available.
+ * @param cipher Initialized stream state to advance.
+ * @author marceline
+ */
 void nextRandom(streamcipher_t *cipher) {
     cipher->state ^= cipher->state >> 12;
     cipher->state ^= cipher->state << 25;
@@ -20,13 +30,20 @@ void nextRandom(streamcipher_t *cipher) {
     cipher->bytes_available = 8;
 }
 
+/** XOR a buffer with the stream, allowing the same state and key to restore it.
+ * @param cipher Initialized stream state, advanced as bytes are consumed.
+ * @param buffer Bytes transformed in place; must be non-null.
+ * @param length Number of bytes to transform.
+ * @return 0 on success, or 1 when the state or buffer is null.
+ * @author marceline
+ */
 int performCipher(streamcipher_t *cipher, char *buffer, size_t length) {
     size_t i; //declaring i as a size_t since it is being compared to length, also a size_t
 
     if (cipher == NULL || buffer == NULL) {
         return 1; //return failure if cipher is unassigned, or if the buffer is empty
     }
-    
+
     for (i = 0; i < length; i++) {
         if (cipher->bytes_available == 0) {
             nextRandom(cipher); //continues to generate the stream
@@ -45,6 +62,12 @@ int performCipher(streamcipher_t *cipher, char *buffer, size_t length) {
     return 0;
 }
 
+/** Transform a file in place using the supplied XOR stream key.
+ * @param filename Existing readable and writable file to transform.
+ * @param key Nonzero seed shared with the matching reverse transform.
+ * @return 0 when all bytes are transformed and the file closes cleanly; otherwise 1.
+ * @author marceline
+ */
 int encryptFile(const char *filename, unsigned long long key) {
     FILE *file;
     streamcipher_t cipher;
