@@ -1,7 +1,7 @@
-/** @file main.c
- * @brief Interactive compression menu with login and file encryption.
+/**
+ * @file main.c Command-line and interactive application entry point.
+ * @author haadi
  */
-
 /*//////////////////////////////////////////////////
 IMPORTS
 //////////////////////////////////////////////////*/
@@ -10,147 +10,356 @@ IMPORTS
 #include <stdlib.h>
 #include <string.h>
 
-#include "../encryption/encryption.h"
 #include "../compression/compression.h"
-#include "../login/login.h"
+#include "../compression/media.h"
 
 /*//////////////////////////////////////////////////
-HELPERS
+CLI
 //////////////////////////////////////////////////*/
 
-/** Reads and parses one numeric menu selection.
- * @param prompt Prompt written before reading input.
- * @return Parsed selection, zero for invalid input, or -1 at end of input.
+/**
+ * Print supported command forms and their required arguments.
+ * @param stream Destination for the usage text.
+ * @author haadi
  */
-static int readMenuChoice(const char *prompt) {
-    char line[32];
-    char *end;
-    long choice;
-
-    fputs(prompt, stdout);
-    if (fgets(line, sizeof(line), stdin) == NULL)
-        return -1;
-
-    choice = strtol(line, &end, 10);
-    if (end == line)
-        return 0;
-    return (int)choice;
+static void usage(FILE *stream) {
+    fputs("Usage:\n"
+          "  compression-demo compress <input> <output.tcmp>\n"
+          "  compression-demo decompress <input.tcmp> <output>\n"
+          "  compression-demo inspect <input>\n"
+          "  compression-demo search <input> <literal>\n"
+          "  compression-demo process <input> <output> --mode lossless|vector [options]\n"
+          "    --svg-dir <directory> --colors <2-256> --tolerance <pixels> --force\n"
+          "    vector: lossy Terra sketch output, not general-purpose image compression\n"
+          "  compression-demo --help\n",
+          stream);
 }
 
-/** Reads one non-empty path into a bounded caller-provided buffer.
- * @param prompt Prompt written before reading input.
- * @param path Buffer that receives the path.
- * @param capacity Size of the path buffer.
- * @return 1 for a path, zero for invalid input, or -1 at end of input.
+/**
+ * Parse a positive palette size within the supported 2–256 range.
+ * @param text Command-line value expected to be an integer from 2 through 256.
+ * @param value Receives the validated palette size.
+ * @return 1 when the value is within the supported range; otherwise 0.
+ * @author haadi
  */
-static int readPath(const char *prompt, char *path, size_t capacity) {
+static int parseColors(const char *text, unsigned *value) {
+    char *end;
+    unsigned long parsed;
+    parsed = strtoul(text, &end, 10);
+    if (end == text || *end || parsed < 2 || parsed > 256)
+        return 0;
+    *value = (unsigned)parsed;
+    return 1;
+}
+
+/**
+ * Parse a finite, nonnegative contour tolerance.
+ * @param text Command-line value expected to be a finite nonnegative number.
+ * @param value Receives the validated contour tolerance.
+ * @return 1 when the value is within the supported range; otherwise 0.
+ * @author haadi
+ */
+static int parseTolerance(const char *text, double *value) {
+    char *end;
+    double parsed;
+    parsed = strtod(text, &end);
+    if (end == text || *end || !(parsed >= 0.0 && parsed <= 2.0))
+        return 0;
+    *value = parsed;
+    return 1;
+}
+
+/**
+ * Validate process options and dispatch the requested media operation.
+ * @param argc Number of command-line arguments, including the executable name.
+ * @param argv Arguments containing the input, output, and processing options.
+ * @return 1 when the command succeeds; 0 when arguments or the selected operation fail.
+ * @author haadi
+ */
+static int processCommand(int argc, char **argv) {
+    MediaOptions options = {0, 0, 2, 1.0, NULL};
+    int modeSeen = 0, i;
+    for (i = 4; i < argc; i++) {
+        if (!strcmp(argv[i], "--mode") && i + 1 < argc) {
+            const char *mode = argv[++i];
+            if (modeSeen++ || (strcmp(mode, "lossless") && strcmp(mode, "vector")))
+                return 0;
+            options.vectorMode = !strcmp(mode, "vector");
+        } else if (!strcmp(argv[i], "--svg-dir") && i + 1 < argc) {
+            options.imagesDirectory = argv[++i];
+        } else if (!strcmp(argv[i], "--colors") && i + 1 < argc) {
+            if (!parseColors(argv[++i], &options.colors))
+                return 0;
+        } else if (!strcmp(argv[i], "--tolerance") && i + 1 < argc) {
+            if (!parseTolerance(argv[++i], &options.tolerance))
+                return 0;
+        } else if (!strcmp(argv[i], "--force")) {
+            options.force = 1;
+        } else {
+            return 0;
+        }
+    }
+    if (!modeSeen) {
+        fputs("Choose --mode lossless or --mode vector.\n", stderr);
+        return 0;
+    }
+    return processMedia(argv[2], argv[3], &options);
+}
+
+/**
+ * Dispatch one supported command-line operation.
+ * @param argc Number of command-line arguments, including the executable name.
+ * @param argv Parsed command and its operands.
+ * @return 1 when the selected command succeeds; otherwise 0.
+ * @author haadi
+ */
+static int runCommand(int argc, char **argv) {
+    if (argc == 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h"))) {
+        usage(stdout);
+        return 1;
+    }
+    if (argc == 4 && !strcmp(argv[1], "compress"))
+        return archiveFile(argv[2], argv[3]);
+    if (argc == 4 && !strcmp(argv[1], "decompress"))
+        return decompressFile(argv[2], argv[3]);
+    if (argc == 3 && !strcmp(argv[1], "inspect"))
+        return inspectFile(argv[2]);
+    if (argc == 4 && !strcmp(argv[1], "search"))
+        return searchFile(argv[2], argv[3]);
+    if (argc >= 5 && !strcmp(argv[1], "process"))
+        return processCommand(argc, argv);
+    usage(stderr);
+    return 0;
+}
+
+/*//////////////////////////////////////////////////
+INTERACTIVE MODE
+//////////////////////////////////////////////////*/
+
+/**
+ * Read one prompted path into a bounded caller-owned buffer.
+ * @param prompt Message shown before reading the path.
+ * @param path Caller-owned buffer receiving the trimmed path.
+ * @param capacity Buffer size including space for the terminating NUL.
+ * @param allowEmpty Whether a blank line is accepted for the optional output path.
+ * @return 1 for a complete nonempty line, 0 for an invalid or overlong line, or -1 on end-of-input.
+ * @author haadi
+ */
+static int readPath(const char *prompt, char *path, size_t capacity, int allowEmpty) {
     size_t length;
     int ch;
-
     fputs(prompt, stdout);
-    if (fgets(path, (int)capacity, stdin) == NULL)
+    if (!fgets(path, (int)capacity, stdin))
         return -1;
     length = strcspn(path, "\r\n");
-    if (path[length] == '\0' && length == capacity - 1) {
+    if (length == capacity - 1 && path[length] == '\0') {
         while ((ch = getchar()) != '\n' && ch != EOF)
             ;
         puts("Path is too long.");
         return 0;
     }
     path[length] = '\0';
-    if (length == 0) {
+    if (!length && !allowEmpty) {
         puts("Path cannot be empty.");
         return 0;
     }
     return 1;
 }
 
-/** Reads source and destination paths, then runs a file action.
- * @param inputPrompt Prompt appropriate to the action's source file.
- * @param action File-level compression or decompression function.
- * @param actionName Name used in the completion message.
- * @param encryptOutput Whether to encrypt a successful output file.
- * @param decryptInput Whether to decrypt the input file in place first.
- * @return -1 when input ends, otherwise zero after handling the request.
+/**
+ * Confirm that an input path can be read and contains at least one byte.
+ * @param path User-supplied source path.
+ * @return 1 for a readable generic file, 2 for PNG/JPEG, 3 for PDF, or 0 for unreadable or empty.
+ * @author haadi
  */
-static int runFileAction(const char *inputPrompt,
-                         int (*action)(const char *, const char *),
-                         const char *actionName,
-                         int encryptOutput,
-                         int decryptInput) {
-    char inputPath[512];
-    char outputPath[512];
-    int pathStatus = readPath(inputPrompt, inputPath, sizeof(inputPath));
-    int success;
-
-    if (pathStatus < 0)
-        return -1;
-    if (pathStatus == 0)
-        return 0;
-
-    pathStatus = readPath("Output path: ", outputPath, sizeof(outputPath));
-    if (pathStatus < 0)
-        return -1;
-    if (pathStatus == 0)
-        return 0;
-
-    if (decryptInput && encryptFile(inputPath, KEY) != 0) {
-        printf("%s failed.\n", actionName);
+static int validateInput(const char *path) {
+    FILE *file = fopen(path, "rb");
+    unsigned char signature[8] = {0};
+    size_t count;
+    int byte, ok = 0, media = 0;
+    if (!file) {
+        perror(path);
         return 0;
     }
-
-    success = action(inputPath, outputPath);
-    if (success && encryptOutput)
-        success = encryptFile(outputPath, KEY) == 0;
-    printf("%s %s.\n", actionName, success ? "complete" : "failed");
-    return 0;
+    count = fread(signature, 1, sizeof(signature), file);
+    media = count >= 5 && !memcmp(signature, "%PDF-", 5) ? 2
+            : (count >= 8 && !memcmp(signature, "\211PNG\r\n\032\n", 8)) ||
+                    (count >= 2 && signature[0] == 255 && signature[1] == 216)
+                ? 1
+                : 0;
+    if (ferror(file)) {
+        fclose(file);
+        fprintf(stderr, "Could not read input: %s\n", path);
+        return 0;
+    }
+    rewind(file);
+    byte = fgetc(file);
+    if (byte != EOF) {
+        while (byte != EOF)
+            byte = fgetc(file);
+        ok = !ferror(file);
+    }
+    fclose(file);
+    if (!ok)
+        fprintf(stderr, "Input is empty or unreadable: %s\n", path);
+    return ok ? media + 1 : 0;
 }
 
-/** Displays the top-level menu and returns the user's selection.
- * @return Parsed menu selection, zero for invalid input, or -1 at EOF.
+/**
+ * Derive a sibling output path by adding the compression suffix before its extension.
+ * @param input Source path whose directory and extension are retained.
+ * @param output Buffer receiving the derived path.
+ * @param capacity Output buffer size including its terminating NUL.
+ * @param extension Optional replacement extension, without the leading dot.
+ * @return 1 when the derived path fits, otherwise 0.
+ * @author haadi
  */
-static int showMainMenu(void) {
-    puts("\n=== Compression demo ===");
-    puts("1. Compress & encrypt file");
-    puts("2. Decrypt & decompress file");
-    puts("3. Exit");
-    return readMenuChoice("Selection: ");
+static int defaultOutputPath(const char *input, char *output, size_t capacity,
+                             const char *extension) {
+    const char *slash = strrchr(input, '/');
+    const char *dot = strrchr(input, '.');
+    size_t stem = strlen(input), suffix = strlen("-compressed");
+    if (dot && (!slash || dot > slash))
+        stem = (size_t)(dot - input);
+    size_t ending = extension ? strlen(extension) + 1 : strlen(input + stem);
+    if (stem + suffix + ending + 1 > capacity)
+        return 0;
+    memcpy(output, input, stem);
+    memcpy(output + stem, "-compressed", suffix);
+    if (extension) {
+        output[stem + suffix] = '.';
+        strcpy(output + stem + suffix + 1, extension);
+    } else
+        strcpy(output + stem + suffix, input + stem);
+    return 1;
+}
+
+/**
+ * Process a raster or PDF as a lossy SVG vector export.
+ * @param input Validated PNG, JPEG, or PDF path.
+ * @param output Destination for the SVG or rebuilt PDF.
+ * @return 1 when vector processing succeeds; otherwise 0.
+ * @author haadi
+ */
+static int vectorizeMedia(const char *input, const char *output) {
+    MediaOptions options = {1, 0, 2, 1.0, NULL};
+    return processMedia(input, output, &options);
+}
+
+/**
+ * Prompt for input and output paths, then invoke the selected file action.
+ * @param label Action name displayed in the input/output prompts.
+ * @param action File operation called after both paths are read.
+ * @return The path-read status on input failure, or 1 after the operation result is reported.
+ * @author haadi
+ */
+static int runInteractiveAction(const char *label, int (*action)(const char *, const char *)) {
+    char input[512], output[512], mode[32];
+    const char *extension = NULL;
+    int kind;
+    int status = readPath("Input path: ", input, sizeof(input), 0);
+    if (status <= 0)
+        return status;
+    kind = validateInput(input);
+    if (!kind)
+        return 1;
+    if (!strcmp(label, "Compression") && kind > 1) {
+        puts("\nChoose a media output style:");
+        puts("+-- 1) Preserve media unchanged (lossless copy)");
+        if (kind == 3)
+            puts("`-- 2) Terra sketch mode (lossy PDF rebuild + SVG sidecars)");
+        else
+            puts("`-- 2) Terra sketch mode (lossy SVG, two-colour default)");
+        puts("    Note: tuned for simple, low-detail Terra sketches; not general-purpose.");
+        status = readPath("Choose 1 or 2: ", mode, sizeof(mode), 0);
+        if (status <= 0)
+            return status;
+        if (!strcmp(mode, "1"))
+            extension = kind == 3 ? "pdf" : NULL;
+        else if (!strcmp(mode, "2")) {
+            action = vectorizeMedia;
+            extension = kind == 3 ? "pdf" : "svg";
+        } else {
+            puts("Invalid compression type.");
+            return 1;
+        }
+    } else if (!strcmp(label, "Compression"))
+        extension = "tcmp";
+    status =
+        readPath("Output path (Enter for sibling -compressed name): ", output, sizeof(output), 1);
+    if (status <= 0)
+        return status;
+    if (!output[0] && !defaultOutputPath(input, output, sizeof(output), extension)) {
+        puts("Could not derive an output path; enter one explicitly.");
+        return 1;
+    }
+    printf("%s %s.\n", label, action(input, output) ? "complete" : "failed");
+    return 1;
+}
+
+/**
+ * Run the interactive compression menu until the user exits.
+ * @return 1 after menu exit or end-of-input.
+ * @author haadi
+ */
+static int runMenu(void) {
+    char line[32];
+    int choice;
+    char *end;
+    long parsed;
+    do {
+        puts("\n+----------------------------------------------+");
+        puts("|             TERRA COMPRESSION                |");
+        puts("+----------------------------------------------+");
+        puts("| 1) Process a file                            |");
+        puts("|    +-- PNG/JPEG/PDF: choose output style     |");
+        puts("|    `-- Other files: lossless TCMP archive    |");
+        puts("| 2) Restore a TCMP archive                    |");
+        puts("| 3) Exit                                      |");
+        puts("+----------------------------------------------+");
+        fputs("Choose [1-3]: ", stdout);
+        if (!fgets(line, sizeof(line), stdin))
+            break;
+        if (!strchr(line, '\n')) {
+            int ch = getchar();
+            if (ch != '\n' && ch != EOF) {
+                while (ch != '\n' && ch != EOF)
+                    ch = getchar();
+                puts("Invalid selection.");
+                choice = 0;
+                continue;
+            }
+        }
+        parsed = strtol(line, &end, 10);
+        while (*end == ' ' || *end == '\t')
+            end++;
+        if (end == line || (*end != '\n' && *end != '\r' && *end != '\0') || parsed < 1 ||
+            parsed > 3)
+            choice = 0;
+        else
+            choice = (int)parsed;
+        if (!choice)
+            puts("Invalid selection.");
+        if (choice == 1)
+            runInteractiveAction("Compression", compressFile);
+        else if (choice == 2)
+            runInteractiveAction("Decompression", decompressFile);
+    } while (choice != 3);
+    return 1;
 }
 
 /*//////////////////////////////////////////////////
-APPLICATION ENTRY POINT
+ENTRY POINT
 //////////////////////////////////////////////////*/
 
-/** @brief Runs the compression menu after successful login.
- * @return Zero after the menu closes, nonzero when login fails.
+/**
+ * Select command-line or interactive mode.
+ * @param argc Number of command-line arguments.
+ * @param argv Argument vector; selects command-line mode when supplied.
+ * @return Process exit status for the C runtime.
+ * @author haadi
  */
-int main(void) {
-    int selection;
-
-    if (loginFunction() != 0) {
-        puts("Login failed.");
-        return EXIT_FAILURE;
-    }
-
-    puts("Compression program");
-    do {
-        selection = showMainMenu();
-        switch (selection) {
-        case 1:
-            if (runFileAction("Input path (PDF or image): ", compressFile,
-                              "Compression", 1, 0) < 0)
-                selection = -1;
-            break;
-        case 2:
-            if (runFileAction("Input path: ", decompressFile,
-                              "Decompression", 0, 1) < 0)
-                selection = -1;
-            break;
-        default:
-            break;
-        }
-    } while (selection != 3 && selection != -1);
-
-    puts("Done.");
-    return EXIT_SUCCESS;
+int main(int argc, char **argv) {
+    int status = argc == 1 ? runMenu() : runCommand(argc, argv);
+    return status ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -1,4 +1,7 @@
-/** @file vector.c Adaptive median-cut palette and connected-region contours. @author kai */
+/**
+ * @file vector.c Adaptive palette quantization and connected-region vector paths.
+ * @author kai
+ */
 /*//////////////////////////////////////////////////
 IMPORTS
 //////////////////////////////////////////////////*/
@@ -37,14 +40,25 @@ PALETTE
 //////////////////////////////////////////////////*/
 
 // LABELS
-/** Bucket RGBA samples while normalising fully transparent pixels. @author kai */
+/**
+ * Map an RGBA pixel to a 16-bit histogram bucket; transparent pixels share bucket zero.
+ * @param p One RGBA pixel to quantize into a histogram bucket.
+ * @return 16-bit histogram key; fully transparent pixels map to zero.
+ * @author kai
+ */
 static unsigned colorKey(const unsigned char *p) {
     if (!p[3])
         return 0;
     return ((unsigned)(p[0] >> 4) << 12) | ((unsigned)(p[1] >> 4) << 8) |
            ((unsigned)(p[2] >> 4) << 4) | (p[3] >> 4);
 }
-/** Order colour bins deterministically along the selected median-cut channel. @author kai */
+/**
+ * Order colour bins on the channel selected for the current median cut.
+ * @param a First ColorBin supplied to qsort.
+ * @param b Second ColorBin supplied to qsort.
+ * @return Negative, zero, or positive according to selected channel and stable colour order.
+ * @author kai
+ */
 static int compareBins(const void *a, const void *b) {
     const ColorBin *x = a, *y = b;
     int difference = (int)x->value[sortChannel] - y->value[sortChannel];
@@ -52,7 +66,16 @@ static int compareBins(const void *a, const void *b) {
 }
 
 // MEDIAN CUT
-/** Build a population-weighted palette and map each pixel to a colour label. @author kai */
+/**
+ * Build a population-weighted palette and assign each pixel to its nearest entry.
+ * @param im Decoded RGBA image to quantize.
+ * @param requested Maximum number of palette colours.
+ * @param palette Receives palette RGBA entries.
+ * @param used Receives the number of populated palette entries.
+ * @param labels Receives one palette index per source pixel.
+ * @return Nonzero when palette labels are populated; zero on allocation failure.
+ * @author kai
+ */
 static int paletteImage(const RcImage *im, unsigned requested, unsigned char palette[256][4],
                         unsigned *used, unsigned char **labels) {
     ColorBin *hist = calloc(65536, sizeof(*hist)), *bins = NULL;
@@ -193,7 +216,14 @@ CONTOURS
 //////////////////////////////////////////////////*/
 
 // EDGE GRAPH
-/** Append a contour vertex within the allocation limit; callers emit turns only. @author kai */
+/**
+ * Append a contour vertex, growing the point list as needed.
+ * @param p Contour point array to extend.
+ * @param x Horizontal position.
+ * @param y Vertical position.
+ * @return Nonzero when the vertex is appended; zero when bounded allocation fails.
+ * @author kai
+ */
 static int pointAdd(Points *p, int x, int y) {
     if (p->count == p->capacity) {
         size_t cap = p->capacity ? p->capacity * 2 : 256;
@@ -209,13 +239,34 @@ static int pointAdd(Points *p, int x, int y) {
     p->p[p->count++] = (Point){x, y};
     return 1;
 }
-/** Read a colour label, treating pixels outside the image as background. @author kai */
+/**
+ * Return a palette label at a pixel coordinate, or the transparent/outside label.
+ * @param labels Row-major palette index for each pixel.
+ * @param w Image width used for row addressing.
+ * @param h Image height used to identify outside coordinates.
+ * @param x Horizontal position.
+ * @param y Vertical position.
+ * @return Palette index at the coordinate, or -1 outside the image.
+ * @author kai
+ */
 static int labelAt(const unsigned char *labels, unsigned w, unsigned h, int x, int y) {
     return x < 0 || y < 0 || (unsigned)x >= w || (unsigned)y >= h
                ? -1
                : labels[(size_t)y * w + (unsigned)x];
 }
-/** Identify a directed boundary with the requested region on its right. @author kai */
+/**
+ * Check whether a directed pixel edge borders the requested palette region.
+ * @param labels Row-major palette labels.
+ * @param w Image width.
+ * @param h Image height.
+ * @param x Horizontal position.
+ * @param y Vertical position.
+ * @param d Clockwise edge direction: east, south, west, or north.
+ * @param color Palette index whose boundary is being traced.
+ * @param cell Receives the adjacent pixel index for visited-edge tracking.
+ * @return Nonzero when this edge borders the requested region and cell is set.
+ * @author kai
+ */
 static int edge(const unsigned char *labels, unsigned w, unsigned h, int x, int y, unsigned d,
                 int color, size_t *cell) {
     static const int rightX[4] = {0, -1, -1, 0}, rightY[4] = {0, 0, -1, -1};
@@ -228,7 +279,14 @@ static int edge(const unsigned char *labels, unsigned w, unsigned h, int x, int 
 }
 
 // SIMPLIFICATION
-/** Measure a vertex against a bounded line segment. @author kai */
+/**
+ * Measure squared distance from a point to a line segment for contour simplification.
+ * @param p Point whose distance is measured.
+ * @param a First endpoint of the segment.
+ * @param b Second endpoint of the segment.
+ * @return Squared distance from p to the nearest point on segment ab.
+ * @author kai
+ */
 static double distanceSquared(Point p, Point a, Point b) {
     double dx = b.x - a.x, dy = b.y - a.y, t = 0, ex, ey;
     if (dx || dy)
@@ -238,8 +296,14 @@ static double distanceSquared(Point p, Point a, Point b) {
     ey = p.y - a.y - t * dy;
     return ex * ex + ey * ey;
 }
-/** Simplify contours with shared junctions and direction-independent tie breaking.
- * Closed paths retain winding and at least three vertices; adjacent colours share anchors.
+/**
+ * Simplify a closed contour while retaining winding, shared colour anchors, and three vertices.
+ * @param p Closed contour whose vertices may be removed.
+ * @param tolerance Contour simplification tolerance.
+ * @param labels Neighbouring palette labels used to preserve shared anchors.
+ * @param w Image width for label lookups.
+ * @param h Image height for label lookups.
+ * @return Nonzero when simplification completes; zero if scratch allocation fails.
  * @author kai
  */
 static int simplify(Points *p, double tolerance, const unsigned char *labels, unsigned w,
@@ -368,7 +432,14 @@ done:
 }
 
 // PATH SERIALIZATION
-/** Emit equivalent SVG and PDF geometry for one closed contour. @author kai */
+/**
+ * Append one closed contour to the corresponding SVG and PDF path buffers.
+ * @param svg SVG path buffer receiving the contour.
+ * @param pdf PDF path buffer receiving equivalent geometry.
+ * @param p Simplified closed contour vertices.
+ * @return Nonzero when both path buffers accept the contour; zero if an append fails.
+ * @author kai
+ */
 static int emitContour(RcBuffer *svg, RcBuffer *pdf, const Points *p) {
     size_t i;
     char text[96];
@@ -407,7 +478,11 @@ API
 //////////////////////////////////////////////////*/
 
 // BUFFER OWNERSHIP
-/** Release every owned vector-output buffer. @author kai */
+/**
+ * Release SVG and PDF path buffers owned by a vector result.
+ * @param v Vector result whose owned buffers are released and cleared.
+ * @author kai
+ */
 void rcFreeVector(RcVector *v) {
     free(v->svg.data);
     free(v->pdf.data);
@@ -416,8 +491,12 @@ void rcFreeVector(RcVector *v) {
 }
 
 // REGION OUTPUT
-/** Convert quantized colour labels into SVG and equivalent PDF paths.
- * Right-hand contour traversal preserves holes and transparent regions.
+/**
+ * Quantize RGBA pixels and trace connected palette regions into shared SVG/PDF paths.
+ * @param im Decoded RGBA source image.
+ * @param colors Palette size, limited to 2 through 256.
+ * @param tolerance Maximum contour displacement in pixels.
+ * @param out Receives SVG/PDF geometry and palette metadata.
  * @return 1 with owned output buffers; 0 after releasing incomplete geometry.
  * @author kai
  */

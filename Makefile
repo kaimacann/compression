@@ -2,34 +2,23 @@ CC ?= cc
 CPPFLAGS ?=
 CFLAGS ?= -std=c11 -Wall -Wextra -pedantic
 PROGRAM := compression-demo
-PREFIX ?= /usr/local
-BINDIR ?= $(PREFIX)/bin
 LDLIBS ?= -lm
-DESTDIR ?=
 
 SOURCES := \
 	src/c/main/main.c \
-	src/c/fileIO/filePipeline.c \
-	src/c/fileIO/fileInput/fileInput.c \
-	src/c/fileIO/fileOutput/fileOutput.c \
 	src/c/compression/compression.c \
 	src/c/compression/pdf.c \
 	src/c/compression/codec.c \
 	src/c/compression/jpeg.c \
 	src/c/compression/vector.c \
-	src/c/compression/media.c \
-	src/c/encryption/encryption.c
+	src/c/compression/media.c
 
 HEADERS := \
 	src/c/compression/compression.h \
 	src/c/compression/codec.h \
-	src/c/compression/media.h \
-	src/c/fileIO/filePipeline.h \
-	src/c/fileIO/fileInput/fileInput.h \
-	src/c/fileIO/fileOutput/fileOutput.h \
-	src/c/encryption/encryption.h
+	src/c/compression/media.h
 
-.PHONY: all run debug release install uninstall clean format-c format-c-check
+.PHONY: all run clean format-c format-c-check check-doc-params
 
 all: $(PROGRAM)
 
@@ -39,24 +28,14 @@ $(PROGRAM): $(SOURCES) $(HEADERS)
 run: $(PROGRAM)
 	./$(PROGRAM)
 
-debug:
-	$(CC) $(CPPFLAGS) -DDEBUG $(CFLAGS) -g -O0 -o $(PROGRAM) $(SOURCES) $(LDLIBS)
-
-release:
-	$(CC) $(CPPFLAGS) $(CFLAGS) -O2 -o $(PROGRAM) $(SOURCES) $(LDLIBS)
-
-install: $(PROGRAM)
-	install -d "$(DESTDIR)$(BINDIR)"
-	install -m 755 "$(PROGRAM)" "$(DESTDIR)$(BINDIR)/$(PROGRAM)"
-
-uninstall:
-	rm -f "$(DESTDIR)$(BINDIR)/$(PROGRAM)"
-
 format-c:
-	clang-format --style=file:config/.clang-format -i $(shell find src/c -type f \( -name '*.c' -o -name '*.h' \))
+	clang-format --style=file:config/.clang-format -i $(SOURCES) $(HEADERS)
 
 format-c-check:
-	clang-format --style=file:config/.clang-format --dry-run --Werror $(shell find src/c -type f \( -name '*.c' -o -name '*.h' \))
+	clang-format --style=file:config/.clang-format --dry-run --Werror $(SOURCES) $(HEADERS)
+
+check-doc-params:
+	node scripts/check-doc-params.mjs
 
 clean:
 	rm -f $(PROGRAM) *.plist

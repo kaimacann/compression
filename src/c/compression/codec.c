@@ -1,4 +1,7 @@
-/** @file codec.c Original PNG and DEFLATE codecs. @author kai */
+/**
+ * @file codec.c Original PNG, zlib, and DEFLATE codecs.
+ * @author kai
+ */
 /*//////////////////////////////////////////////////
 IMPORTS
 //////////////////////////////////////////////////*/
@@ -44,7 +47,14 @@ BUFFERS
 //////////////////////////////////////////////////*/
 
 // STORAGE
-/** Grow a bounded buffer and append bytes without losing its current allocation. @author kai */
+/**
+ * Append bytes to a buffer, growing it up to the shared size limit.
+ * @param b Buffer that owns the appended bytes.
+ * @param p Bytes to copy into the buffer.
+ * @param n Number of bytes to append.
+ * @return Nonzero when the buffer owns the appended bytes; zero on limit or allocation failure.
+ * @author kai
+ */
 int rcAppend(RcBuffer *b, const void *p, size_t n) {
     size_t cap;
     unsigned char *q;
@@ -67,7 +77,13 @@ int rcAppend(RcBuffer *b, const void *p, size_t n) {
 }
 
 // CHECKSUMS
-/** Calculate PNG-compatible CRC-32 over the supplied bytes. @author kai */
+/**
+ * Compute the PNG CRC-32 used to validate chunks.
+ * @param p PNG chunk bytes covered by the checksum.
+ * @param n Number of bytes in the chunk data.
+ * @return CRC-32 value used by the PNG chunk verifier.
+ * @author kai
+ */
 unsigned long rcCrc(const unsigned char *p, size_t n) {
     unsigned long c = 0xffffffffUL;
     size_t i;
@@ -79,7 +95,13 @@ unsigned long rcCrc(const unsigned char *p, size_t n) {
     }
     return c ^ 0xffffffffUL;
 }
-/** Calculate the zlib payload checksum. @author kai */
+/**
+ * Compute the Adler-32 checksum stored at the end of a zlib stream.
+ * @param p Uncompressed zlib payload.
+ * @param n Payload length in bytes.
+ * @return Adler-32 checksum of the uncompressed payload.
+ * @author kai
+ */
 static unsigned long adler(const unsigned char *p, size_t n) {
     unsigned long a = 1, b = 0;
     size_t i;
@@ -89,7 +111,12 @@ static unsigned long adler(const unsigned char *p, size_t n) {
     }
     return (b << 16) | a;
 }
-/** Read a big-endian 32-bit field. @author kai */
+/**
+ * Read one big-endian 32-bit integer.
+ * @param p Four bytes in network byte order.
+ * @return The unsigned 32-bit value represented by the four bytes.
+ * @author kai
+ */
 static unsigned long be32(const unsigned char *p) {
     return ((unsigned long)p[0] << 24) | ((unsigned long)p[1] << 16) | ((unsigned long)p[2] << 8) |
            p[3];
@@ -100,7 +127,13 @@ DEFLATE
 //////////////////////////////////////////////////*/
 
 // DECODING
-/** Consume low-order DEFLATE bits and flag truncated input. @author kai */
+/**
+ * Read low-order bits from the DEFLATE bit stream.
+ * @param b DEFLATE bit reader whose cursor advances.
+ * @param n Number of low-order bits to consume.
+ * @return The requested bits, or zero while marking the reader invalid on truncation.
+ * @author kai
+ */
 static unsigned readBits(Bits *b, unsigned n) {
     unsigned v;
     while (b->count < n) {
@@ -116,7 +149,14 @@ static unsigned readBits(Bits *b, unsigned n) {
     b->count -= n;
     return v;
 }
-/** Build canonical symbol offsets and reject oversubscribed code lengths. @author kai */
+/**
+ * Build a canonical Huffman lookup table from code lengths; reject oversubscribed tables.
+ * @param h Table to initialize with canonical code counts and symbols.
+ * @param lengths Code length for each symbol.
+ * @param n Number of symbol lengths supplied.
+ * @return Nonzero for a valid canonical table; zero for invalid code lengths.
+ * @author kai
+ */
 static int makeHuff(Huff *h, const unsigned char *lengths, unsigned n) {
     unsigned offsets[16] = {0}, i;
     int left = 1;
@@ -140,7 +180,13 @@ static int makeHuff(Huff *h, const unsigned char *lengths, unsigned n) {
             h->symbols[offsets[lengths[i]]++] = i;
     return 1;
 }
-/** Read one canonical DEFLATE symbol without speculative input reads. @author kai */
+/**
+ * Decode one symbol from a canonical DEFLATE Huffman table.
+ * @param b Bit reader positioned at the next Huffman code.
+ * @param h Canonical table used to map the code to a symbol.
+ * @return Decoded symbol, or -1 if the bit stream cannot form a table code.
+ * @author kai
+ */
 static int decodeHuff(Bits *b, const Huff *h) {
     unsigned code = 0, first = 0, index = 0, n;
     for (n = 1; n <= 15; n++) {
@@ -156,8 +202,11 @@ static int decodeHuff(Bits *b, const Huff *h) {
     b->bad = 1;
     return -1;
 }
-/** Decode and validate one zlib stream.
- * @param out Empty owned buffer; callers release it even when decoding fails.
+/**
+ * Decode and validate one zlib stream.
+ * @param p Complete zlib stream, including header and Adler checksum.
+ * @param n Encoded stream length in bytes.
+ * @param out Receives decoded bytes; release its storage even after failure.
  * @return 1 only when payload and Adler checksum agree.
  * @author kai
  */
@@ -301,7 +350,13 @@ int rcInflate(const unsigned char *p, size_t n, RcBuffer *out) {
 }
 
 // ENCODING
-/** Flush low-order encoded bits into the bounded output buffer. @author kai */
+/**
+ * Append a value to the output bit stream, least-significant bit first.
+ * @param w Bit writer that receives the encoded value.
+ * @param value Value whose low bits are emitted.
+ * @param n Number of low-order bits to emit.
+ * @author kai
+ */
 static void putBits(Writer *w, unsigned value, unsigned n) {
     w->bits |= (unsigned long)value << w->count;
     w->count += n;
@@ -313,7 +368,13 @@ static void putBits(Writer *w, unsigned value, unsigned n) {
         w->count -= 8;
     }
 }
-/** Reverse a canonical code for DEFLATE transmission order. @author kai */
+/**
+ * Reverse the low n bits for DEFLATE canonical codes.
+ * @param v Code whose low-order bits are reversed.
+ * @param n Number of bits to reverse.
+ * @return The low-order n bits of v in reversed order.
+ * @author kai
+ */
 static unsigned reverseBits(unsigned v, unsigned n) {
     unsigned r = 0;
     while (n--) {
@@ -322,7 +383,12 @@ static unsigned reverseBits(unsigned v, unsigned n) {
     }
     return r;
 }
-/** Emit one symbol from the fixed DEFLATE alphabet. @author kai */
+/**
+ * Write one symbol using the fixed DEFLATE literal/length table.
+ * @param w Destination DEFLATE bit writer.
+ * @param s Literal or length symbol from the fixed alphabet.
+ * @author kai
+ */
 static void fixedSymbol(Writer *w, unsigned s) {
     unsigned code, n;
     if (s < 144) {
@@ -340,7 +406,14 @@ static void fixedSymbol(Writer *w, unsigned s) {
     }
     putBits(w, reverseBits(code, n), n);
 }
-/** Encode zlib data using fixed codes and a bounded LZ77 history search. @author kai */
+/**
+ * Encode bytes as a zlib stream using stored blocks when compression is not useful.
+ * @param p Uncompressed bytes to encode.
+ * @param n Input length in bytes.
+ * @param out Receives the complete zlib stream.
+ * @return Nonzero when a complete stream is produced; zero on allocation or size failure.
+ * @author kai
+ */
 int rcDeflate(const unsigned char *p, size_t n, RcBuffer *out) {
     size_t *head = malloc(65536 * sizeof(*head)), *prev;
     size_t at = 0, i;
@@ -438,12 +511,26 @@ PNG
 //////////////////////////////////////////////////*/
 
 // FILTERS
-/** Choose the nearest PNG predictor neighbour. @author kai */
+/**
+ * Select the PNG Paeth predictor nearest to the three neighbouring bytes.
+ * @param a Left neighbouring sample.
+ * @param b Sample above the current position.
+ * @param c Upper-left neighbouring sample.
+ * @return The neighbouring sample nearest the Paeth estimate.
+ * @author kai
+ */
 static int paeth(int a, int b, int c) {
     int p = a + b - c, pa = abs(p - a), pb = abs(p - b), pc = abs(p - c);
     return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
-/** Read one packed PNG sample at its declared bit depth. @author kai */
+/**
+ * Read one packed PNG sample at the requested bit depth.
+ * @param row Packed row to read or update.
+ * @param sample Zero-based sample index in the packed row.
+ * @param depth PNG sample bit depth: 1, 2, 4, 8, or 16.
+ * @return The unpacked sample value at the requested index.
+ * @author kai
+ */
 unsigned rcSample(const unsigned char *row, size_t sample, unsigned depth) {
     if (depth == 16)
         return ((unsigned)row[sample * 2] << 8) | row[sample * 2 + 1];
@@ -452,7 +539,13 @@ unsigned rcSample(const unsigned char *row, size_t sample, unsigned depth) {
     return (row[sample * depth / 8] >> (8 - depth - (sample * depth % 8))) & ((1U << depth) - 1);
 }
 
-/** Reverse a PNG byte filter in place; NULL prior denotes the first row.
+/**
+ * Reverse one PNG scanline filter using the prior decoded row when present.
+ * @param row Packed row to read or update.
+ * @param prior Previous decoded row, or NULL.
+ * @param length Number of bytes to process.
+ * @param bpp Bytes per pixel.
+ * @param filter Filter selector.
  * @return 0 for an unknown filter; row and prior must each cover length bytes.
  * @author kai
  */
@@ -477,7 +570,14 @@ int rcUnfilter(unsigned char *row, const unsigned char *prior, size_t length, si
 }
 
 // IMAGE DECODING
-/** Validate PNG chunks and reconstruct RGBA pixels across Adam7 passes. @author kai */
+/**
+ * Decode supported PNG colour types, transparency, and Adam7 passes into RGBA8.
+ * @param p Complete PNG file bytes.
+ * @param n PNG length in bytes.
+ * @param im Receives decoded RGBA8 pixels on success.
+ * @return Nonzero for a fully validated image; zero for malformed or unsupported data.
+ * @author kai
+ */
 static int pngDecode(const unsigned char *p, size_t n, RcImage *im) {
     unsigned w = 0, h = 0, depth = 0, type = 0, interlace = 0, channels = 0, paletteCount = 0;
     unsigned char palette[256][4];
@@ -663,8 +763,11 @@ API
 //////////////////////////////////////////////////*/
 
 // FORMAT DISPATCH
-/** Detect PNG/JPEG contents and decode straight-alpha RGBA8 pixels.
- * @param im Receives owned pixels; source precision is preserved by lossless file copying.
+/**
+ * Select a decoder from the file signature and return owned RGBA8 pixels.
+ * @param p PNG or JPEG file bytes, identified by signature.
+ * @param n Encoded file length in bytes.
+ * @param im Receives owned RGBA pixels on success.
  * @return 0 for malformed, unsupported, or over-limit images.
  * @author kai
  */

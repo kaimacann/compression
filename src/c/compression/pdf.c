@@ -1,4 +1,7 @@
-/** @file pdf.c Classic-PDF object processing, with immutable-source fallback. @author kai */
+/**
+ * @file pdf.c Classic PDF image processing with immutable-source fallback.
+ * @author kai
+ */
 /*//////////////////////////////////////////////////
 IMPORTS
 //////////////////////////////////////////////////*/
@@ -37,13 +40,30 @@ PARSING
 //////////////////////////////////////////////////*/
 
 // TOKENS
-/** Recognise PDF whitespace, including NUL. @author kai */
+/**
+ * Recognize PDF whitespace bytes.
+ * @param c Byte tested for PDF whitespace.
+ * @return 1 for a PDF whitespace byte; otherwise 0.
+ * @author kai
+ */
 static int white(unsigned char c) {
     return c == 0 || c == 9 || c == 10 || c == 12 || c == 13 || c == 32;
 }
-/** Identify PDF token boundaries without matching inside names. @author kai */
+/**
+ * Recognize PDF token delimiters, including whitespace.
+ * @param c Byte tested for PDF token delimiting.
+ * @return 1 for a delimiter byte; otherwise 0.
+ * @author kai
+ */
 static int delimiter(unsigned char c) { return white(c) || strchr("()<>[]{}/%", c) != NULL; }
-/** Skip PDF whitespace and comments. @author kai */
+/**
+ * Skip PDF whitespace and comments, returning the next token offset.
+ * @param p PDF source bytes.
+ * @param n Source length.
+ * @param at Offset from which whitespace and comments are skipped.
+ * @return Offset of the next token, or n when only whitespace remains.
+ * @author kai
+ */
 static size_t space(const unsigned char *p, size_t n, size_t at) {
     for (;;) {
         while (at < n && white(p[at]))
@@ -55,13 +75,29 @@ static size_t space(const unsigned char *p, size_t n, size_t at) {
             return at;
     }
 }
-/** Match a bounded PDF keyword at a token boundary. @author kai */
+/**
+ * Match a complete PDF keyword at an offset without matching a longer name.
+ * @param p PDF source bytes.
+ * @param n Source length.
+ * @param at Offset where the keyword must begin.
+ * @param word Keyword that must end at a delimiter.
+ * @return 1 for an exact delimited keyword match; otherwise 0.
+ * @author kai
+ */
 static int token(const unsigned char *p, size_t n, size_t at, const char *word) {
     size_t len = strlen(word);
     return at <= n && len <= n - at && !memcmp(p + at, word, len) &&
            (at + len == n || delimiter(p[at + len]));
 }
-/** Read a nonnegative PDF integer with overflow checking. @author kai */
+/**
+ * Parse an unsigned decimal integer and advance the input cursor.
+ * @param p PDF source bytes.
+ * @param n Source length.
+ * @param at Input cursor; advanced past the integer on success.
+ * @param v Receives the parsed nonnegative integer.
+ * @return 1 when a bounded integer is parsed; otherwise 0.
+ * @author kai
+ */
 static int uintAt(const unsigned char *p, size_t n, size_t *at, size_t *v) {
     size_t k = space(p, n, *at), value = 0, start = k;
     while (k < n && p[k] >= '0' && p[k] <= '9') {
@@ -76,7 +112,15 @@ static int uintAt(const unsigned char *p, size_t n, size_t *at, size_t *v) {
     *v = value;
     return 1;
 }
-/** Skip one bounded PDF value, including nested containers and escaped strings. @author kai */
+/**
+ * Find the end of one PDF value while bounding nested arrays and dictionaries.
+ * @param p PDF source bytes.
+ * @param n Source length.
+ * @param at Offset at the first byte of the value.
+ * @param depth Recursion depth, bounded to prevent excessive nesting.
+ * @return Offset after the value, or n + 1 for malformed or over-nested input.
+ * @author kai
+ */
 static size_t valueEnd(const unsigned char *p, size_t n, size_t at, unsigned depth) {
     size_t k = space(p, n, at), start = k;
     if (depth > 32 || k == n)
@@ -154,7 +198,14 @@ static size_t valueEnd(const unsigned char *p, size_t n, size_t at, unsigned dep
     }
     return k;
 }
-/** Find a top-level dictionary key without searching nested values or streams. @author kai */
+/**
+ * Find a named value in a PDF dictionary slice.
+ * @param dictionary Dictionary slice to search.
+ * @param key Dictionary key or codec key.
+ * @param result Receives the value slice when the key exists.
+ * @return 1 when found, 0 when absent, or -1 when the dictionary is malformed.
+ * @author kai
+ */
 static int dictValue(Slice dictionary, const char *key, Slice *result) {
     const unsigned char *p = dictionary.p;
     size_t end = dictionary.n, at = space(p, end, 0), keyLength = strlen(key);
@@ -183,11 +234,24 @@ static int dictValue(Slice dictionary, const char *key, Slice *result) {
     }
     return -1;
 }
-/** Compare an entire PDF name or literal token. @author kai */
+/**
+ * Compare a PDF name slice with an unescaped name.
+ * @param s PDF name slice to compare.
+ * @param v Expected decoded name without the leading slash.
+ * @return 1 when the complete name matches; otherwise 0.
+ * @author kai
+ */
 static int nameIs(Slice s, const char *v) { return s.n == strlen(v) && !memcmp(s.p, v, s.n); }
 
 // REFERENCES
-/** Resolve an xref entry to its first validated object value. @author kai */
+/**
+ * Return the parsed value slice for a live indirect object.
+ * @param pdf Parsed document object table.
+ * @param id Indirect object number to look up.
+ * @param value Receives the object value slice.
+ * @return 1 when the live object is valid; otherwise 0.
+ * @author kai
+ */
 static int objectValue(Pdf *pdf, unsigned id, Slice *value) {
     size_t at, num, gen;
     if (id >= pdf->count || !pdf->objects[id].live)
@@ -209,7 +273,14 @@ static int objectValue(Pdf *pdf, unsigned id, Slice *value) {
     }
     return 1;
 }
-/** Decode an indirect reference and bound its object and generation numbers. @author kai */
+/**
+ * Parse an indirect object reference and return its object and generation numbers.
+ * @param s Value slice expected to contain an indirect reference.
+ * @param id Receives the referenced object number.
+ * @param gen Receives the referenced generation number.
+ * @return 1 for a valid bounded reference; otherwise 0.
+ * @author kai
+ */
 static int reference(Slice s, unsigned *id, unsigned *gen) {
     size_t at = 0, a, b;
     if (!uintAt(s.p, s.n, &at, &a) || !uintAt(s.p, s.n, &at, &b) || a > 100000 || b > 65535)
@@ -221,7 +292,13 @@ static int reference(Slice s, unsigned *id, unsigned *gen) {
     *gen = (unsigned)b;
     return 1;
 }
-/** Follow a bounded indirect-reference chain. @author kai */
+/**
+ * Replace a reference slice with its referenced object value when resolvable.
+ * @param pdf Document used to look up indirect objects.
+ * @param s Reference slice, replaced by its resolved value on success.
+ * @return 1 when resolved or already direct; otherwise 0 for invalid or cyclic references.
+ * @author kai
+ */
 static int resolve(Pdf *pdf, Slice *s) {
     unsigned id, gen;
     unsigned depth;
@@ -233,17 +310,40 @@ static int resolve(Pdf *pdf, Slice *s) {
     }
     return 0;
 }
-/** Resolve a PDF size field to a complete nonnegative integer. @author kai */
+/**
+ * Resolve a nonnegative integer PDF value, including an indirect reference.
+ * @param pdf Document used to resolve indirect values.
+ * @param s PDF value expected to encode a nonnegative integer.
+ * @param v Receives the integer result.
+ * @return 1 when the full value is a valid integer; otherwise 0.
+ * @author kai
+ */
 static int sizeValue(Pdf *pdf, Slice s, size_t *v) {
     size_t at = 0;
     return resolve(pdf, &s) && uintAt(s.p, s.n, &at, v) && space(s.p, s.n, at) == s.n;
 }
-/** Read a direct or indirect integer dictionary field. @author kai */
+/**
+ * Read an integer entry from an image object dictionary.
+ * @param pdf Document used to resolve dictionary values.
+ * @param o PDF object to inspect.
+ * @param key Dictionary key to retrieve.
+ * @param v Receives the resolved integer.
+ * @return 1 when the key resolves to an integer; otherwise 0.
+ * @author kai
+ */
 static int getSize(Pdf *pdf, PdfObject *o, const char *key, size_t *v) {
     Slice s;
     return dictValue(o->value, key, &s) == 1 && sizeValue(pdf, s, v);
 }
-/** Read an existing object reference with a matching generation. @author kai */
+/**
+ * Read an indirect object identifier from an image dictionary entry.
+ * @param pdf Document containing indirect objects.
+ * @param o PDF object to inspect.
+ * @param key Dictionary key to retrieve.
+ * @param id Receives the referenced object number.
+ * @return 1 for a live reference with a matching generation; otherwise 0.
+ * @author kai
+ */
 static int getRef(Pdf *pdf, PdfObject *o, const char *key, unsigned *id) {
     Slice s;
     unsigned gen;
@@ -255,8 +355,10 @@ static int getRef(Pdf *pdf, PdfObject *o, const char *key, unsigned *id) {
 // CROSS-REFERENCE VALIDATION
 
 // CROSS REFERENCES
-/** Validate classic xrefs without searching binary stream contents.
- * Unsupported structures request source preservation instead of speculative rewriting.
+/**
+ * Index classic PDF objects and trailer data; flag structures that cannot be safely rewritten.
+ * @param pdf Document state to populate from the source bytes.
+ * @return 1 when the PDF structure is accepted; otherwise 0.
  * @author kai
  */
 static int parsePdf(Pdf *pdf) {
@@ -415,7 +517,13 @@ IMAGES
 //////////////////////////////////////////////////*/
 
 // FILTERS
-/** Decode PDF ASCII85 with tuple and terminator validation. @author kai */
+/**
+ * Decode an ASCII85 stream into the output buffer.
+ * @param s Encoded ASCII85 stream slice.
+ * @param out Receives decoded stream bytes.
+ * @return 1 for a complete valid stream; otherwise 0 for malformed input or allocation failure.
+ * @author kai
+ */
 static int ascii85(Slice s, RcBuffer *out) {
     unsigned long value = 0;
     unsigned count = 0;
@@ -482,7 +590,12 @@ static int ascii85(Slice s, RcBuffer *out) {
     }
     return 1;
 }
-/** Convert an ASCII hexadecimal digit, returning -1 for invalid input. @author kai */
+/**
+ * Convert one hexadecimal character to its numeric value.
+ * @param c ASCII character expected to be a hexadecimal digit.
+ * @return Value from 0 through 15, or -1 when c is not hexadecimal.
+ * @author kai
+ */
 static int hexDigit(unsigned c) {
     if (c >= '0' && c <= '9')
         return (int)c - '0';
@@ -492,7 +605,13 @@ static int hexDigit(unsigned c) {
         return (int)c - 'a' + 10;
     return -1;
 }
-/** Decode a terminated PDF hexadecimal byte sequence. @author kai */
+/**
+ * Decode a PDF ASCIIHex stream, accepting its optional terminator.
+ * @param s Encoded ASCIIHex stream slice.
+ * @param out Receives decoded stream bytes.
+ * @return 1 for a valid terminated stream; otherwise 0 for invalid input or allocation failure.
+ * @author kai
+ */
 static int asciiHex(Slice s, RcBuffer *out) {
     int prior = -1;
     size_t i;
@@ -523,7 +642,12 @@ static int asciiHex(Slice s, RcBuffer *out) {
     }
     return 1;
 }
-/** Decode an ordered filter chain while retaining its JPEG boundary.
+/**
+ * Decode supported PDF stream filters and report whether the result is JPEG data.
+ * @param pdf Document used to resolve filter parameters.
+ * @param o PDF object whose stream filters are decoded.
+ * @param out Receives decoded stream bytes.
+ * @param jpeg Set when the final stream is JPEG/DCT encoded.
  * @return 1 on success, 0 for unsupported filters, -1 for corrupt supported encodings.
  * @author kai
  */
@@ -589,7 +713,18 @@ done:
 }
 
 // SAMPLE LAYOUT
-/** Reverse TIFF or PNG predictors while checking row dimensions. @author kai */
+/**
+ * Reverse a PDF/PNG predictor using the image geometry and dictionary parameters.
+ * @param pdf Document used to resolve DecodeParms values.
+ * @param o Image object containing predictor parameters.
+ * @param data Flate-decoded bytes, replaced with reconstructed samples.
+ * @param w Image width in pixels.
+ * @param h Image height in rows.
+ * @param channels Samples per pixel.
+ * @param bits Bits per sample.
+ * @return 1 when samples are reconstructed or no predictor is present; otherwise 0.
+ * @author kai
+ */
 static int predictor(Pdf *pdf, PdfObject *o, RcBuffer *data, unsigned w, unsigned h,
                      unsigned channels, unsigned bits) {
     Slice parms, s;
@@ -680,7 +815,12 @@ static int predictor(Pdf *pdf, PdfObject *o, RcBuffer *data, unsigned w, unsigne
 }
 
 // IMAGE OBJECTS
-/** Decode an image object and its supported colour/transparency metadata.
+/**
+ * Decode a supported PDF image XObject, including supported masks and filters.
+ * @param pdf Document containing the image XObject and masks.
+ * @param id Indirect object number of the image.
+ * @param im Receives decoded RGBA pixels.
+ * @param depth Mask-recursion depth, bounded to prevent cycles.
  * @return 1 with owned pixels, 0 for unsupported objects, -1 for corrupt payloads.
  * @author kai
  */
@@ -913,7 +1053,13 @@ OUTPUT
 //////////////////////////////////////////////////*/
 
 // OBJECT SERIALIZATION
-/** Rewrite live objects and their xref offsets while retaining the original trailer. @author kai */
+/**
+ * Write indexed PDF objects, substituting only successfully processed image streams.
+ * @param pdf Parsed document with any accepted stream replacements.
+ * @param out Receives the serialized PDF candidate.
+ * @return 1 when all objects and cross-reference data are written; otherwise 0.
+ * @author kai
+ */
 static int serialize(Pdf *pdf, RcBuffer *out) {
     unsigned i;
     char text[128];
@@ -967,9 +1113,15 @@ done:
 }
 
 // PDF PIPELINE
-/** Build one candidate and SVG sidecars using the original resource identities.
+/**
+ * Process eligible PDF image streams and preserve the original bytes on safe fallback.
+ * @param data Complete source PDF bytes.
+ * @param length Number of bytes available in data.
+ * @param options Vectorization and output policy.
  * @param candidate Receives rebuilt bytes, or stays empty when the source should be retained.
  * @param images Receives owned buffers; masks belong to their image rather than separate exports.
+ * @param imageCount Number of image outputs.
+ * @param unsupported Counter for retained unsupported objects.
  * @return 1 for a candidate or unchanged fallback, 0 for malformed input or allocation failure.
  * @author kai
  */
@@ -1100,4 +1252,3 @@ done:
     }
     return ok;
 }
-/** @author kai */

@@ -1,4 +1,7 @@
-/** @file media.c Format-aware orchestration and staged output transactions. @author kai */
+/**
+ * @file media.c Format-aware processing and staged output transactions.
+ * @author kai
+ */
 /*//////////////////////////////////////////////////
 IMPORTS
 //////////////////////////////////////////////////*/
@@ -23,7 +26,12 @@ FILES
 //////////////////////////////////////////////////*/
 
 // INPUT BUFFERS
-/** Allocate an owned copy of an output path. @author kai */
+/**
+ * Allocate and copy a NUL-terminated path or label.
+ * @param p NUL-terminated text to duplicate.
+ * @return Owned copy of the text, or NULL when allocation fails.
+ * @author kai
+ */
 static char *copyText(const char *p) {
     size_t n = strlen(p) + 1;
     char *s = malloc(n);
@@ -31,7 +39,13 @@ static char *copyText(const char *p) {
         memcpy(s, p, n);
     return s;
 }
-/** Read a file within the processing byte limit. @author kai */
+/**
+ * Read a file into a bounded buffer and report read or close failures.
+ * @param path Input file path to open in binary mode.
+ * @param b Receives the bounded file contents.
+ * @return Nonzero when the complete file is read and closed successfully.
+ * @author kai
+ */
 static int readWhole(const char *path, RcBuffer *b) {
     FILE *f = fopen(path, "rb");
     unsigned char block[8192];
@@ -55,7 +69,14 @@ static int readWhole(const char *path, RcBuffer *b) {
                 (unsigned long)RC_LIMIT, path);
     return ok;
 }
-/** Compare an open destination with source bytes to protect source aliases. @author kai */
+/**
+ * Compare an open file with a byte sequence without loading the file into memory.
+ * @param f Open file positioned at its first byte.
+ * @param p Expected bytes for comparison.
+ * @param n Expected byte count.
+ * @return Nonzero only when the file contains exactly the expected bytes.
+ * @author kai
+ */
 static int fileEquals(FILE *f, const unsigned char *p, size_t n) {
     unsigned char block[8192];
     size_t at = 0, k;
@@ -68,7 +89,14 @@ static int fileEquals(FILE *f, const unsigned char *p, size_t n) {
 }
 
 // OUTPUT LIFETIME
-/** Reserve a sibling staging filename with exclusive creation. @author kai */
+/**
+ * Create a collision-free staging or backup file beside the requested destination.
+ * @param path Destination path used to form a sibling temporary name.
+ * @param suffix Temporary-file purpose included in the name.
+ * @param handle Receives the exclusively created file stream.
+ * @return Owned temporary path, or NULL if allocation or exclusive creation fails.
+ * @author kai
+ */
 static char *uniqueFile(const char *path, const char *suffix, FILE **handle) {
     size_t n = strlen(path) + strlen(suffix) + 32;
     char *name = malloc(n);
@@ -84,7 +112,13 @@ static char *uniqueFile(const char *path, const char *suffix, FILE **handle) {
     free(name);
     return NULL;
 }
-/** Remove owned temporary files and release transaction paths. @author kai */
+/**
+ * Remove temporary transaction files and release output records.
+ * @param out Output records whose staged files and owned paths are released.
+ * @param count Number of records in the array.
+ * @return None.
+ * @author kai
+ */
 static void cleanOutputs(Output *out, size_t count) {
     size_t i;
     if (!out)
@@ -106,9 +140,14 @@ TRANSACTIONS
 //////////////////////////////////////////////////*/
 
 // STAGING AND ROLLBACK
-/** Commit a group of outputs only after every staged write succeeds.
- * Prior destinations remain recoverable until all replacements commit.
+/**
+ * Stage every output before replacement and restore backups if a commit step fails.
  * @return 0 after rollback; failed restoration leaves a reported backup path.
+ * @param out Prepared destinations and byte payloads to commit.
+ * @param count Number of outputs in the transaction.
+ * @param source Original bytes used to protect source aliases.
+ * @param sourceLength Original input length.
+ * @param force Allow replacement after staging recoverable backups.
  * @author kai
  */
 static int writeOutputs(Output *out, size_t count, const unsigned char *source, size_t sourceLength,
@@ -230,7 +269,14 @@ PROCESSING
 //////////////////////////////////////////////////*/
 
 // SIDECAR NAMES
-/** Derive one SVG sidecar path beside the PDF or in the selected directory. @author kai */
+/**
+ * Build the numbered SVG sidecar path beside the PDF or in the requested directory.
+ * @param output Processed PDF path used as the default sidecar base.
+ * @param directory Optional directory for all SVG sidecars.
+ * @param number One-based image index used in the sidecar filename.
+ * @return Owned sidecar path, or NULL when allocation fails.
+ * @author kai
+ */
 static char *imagePath(const char *output, const char *directory, size_t number) {
     const char *base = output, *p, *dot;
     size_t dirLength = 0, baseLength, capacity;
@@ -258,9 +304,12 @@ static char *imagePath(const char *output, const char *directory, size_t number)
 }
 
 // FORMAT ROUTING
-/** Preserve the source and commit a selected media representation.
- * Vector mode explicitly permits palette and contour approximation.
- * @return 1 after committing all outputs; 0 after validation or transaction failure.
+/**
+ * Validate the input format, apply the selected raster or vector pipeline, and commit outputs.
+ * @param input PNG, JPEG, or PDF source path.
+ * @param output Destination path for the selected output.
+ * @param options Processing mode, palette, contour, and replacement policy.
+ * @return Nonzero when processing and output commit succeed; zero on validation or write failure.
  * @author kai
  */
 int processMedia(const char *input, const char *output, const MediaOptions *options) {

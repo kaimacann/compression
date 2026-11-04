@@ -1,4 +1,7 @@
-/** @file jpeg.c Original 8-bit sequential and progressive Huffman JPEG decoder. @author kai */
+/**
+ * @file jpeg.c Original baseline and progressive Huffman JPEG decoder.
+ * @author kai
+ */
 /*//////////////////////////////////////////////////
 IMPORTS
 //////////////////////////////////////////////////*/
@@ -40,9 +43,20 @@ DECODING
 //////////////////////////////////////////////////*/
 
 // ENTROPY
-/** Read a JPEG marker length in network byte order. @author kai */
+/**
+ * Read a big-endian 16-bit JPEG marker or segment value.
+ * @param p Two JPEG bytes in big-endian order.
+ * @return The unsigned 16-bit value represented by the bytes.
+ * @author kai
+ */
 static unsigned j16(const unsigned char *p) { return ((unsigned)p[0] << 8) | p[1]; }
-/** Read JPEG entropy bits while validating byte stuffing. @author kai */
+/**
+ * Read entropy-coded JPEG bits and reject invalid byte stuffing.
+ * @param j Decoder state holding the entropy stream and bit cache.
+ * @param n Number of entropy bits to consume.
+ * @return The next n bits, or zero while marking decoder state invalid on truncation.
+ * @author kai
+ */
 static unsigned jbits(Jpeg *j, unsigned n) {
     unsigned v = 0;
     while (n--) {
@@ -66,7 +80,13 @@ static unsigned jbits(Jpeg *j, unsigned n) {
     }
     return v;
 }
-/** Decode one canonical JPEG Huffman symbol. @author kai */
+/**
+ * Decode one symbol from a JPEG canonical Huffman table.
+ * @param j JPEG decoder state used to read the code bits.
+ * @param h Canonical JPEG table for this symbol class.
+ * @return Decoded symbol; an invalid code marks the decoder state bad.
+ * @author kai
+ */
 static int jhuff(Jpeg *j, const JHuff *h) {
     unsigned code = 0, first = 0, index = 0, n;
     // An unregistered table has zero counts and cannot match any code in this bounded walk.
@@ -82,7 +102,13 @@ static int jhuff(Jpeg *j, const JHuff *h) {
     j->bad = 1;
     return 0;
 }
-/** Read and sign-extend one bounded coefficient magnitude. @author kai */
+/**
+ * Read and sign-extend a JPEG magnitude value.
+ * @param j Decoder state supplying the magnitude bits.
+ * @param n Magnitude bit count from the Huffman symbol.
+ * @return The JPEG sign-extended magnitude, or zero when the count is unsupported.
+ * @author kai
+ */
 static int jreceive(Jpeg *j, unsigned n) {
     unsigned v;
     if (n > 16) {
@@ -92,7 +118,12 @@ static int jreceive(Jpeg *j, unsigned n) {
     v = jbits(j, n);
     return n && v < (1U << (n - 1)) ? (int)v - (int)((1U << n) - 1) : (int)v;
 }
-/** Consume a marker after entropy padding has been discarded. @author kai */
+/**
+ * Read the next JPEG marker, skipping marker fill bytes.
+ * @param j Decoder state positioned at the next marker prefix.
+ * @return Marker byte, or -1 for a missing or truncated marker.
+ * @author kai
+ */
 static int nextMarker(Jpeg *j) {
     unsigned c;
     if (j->at >= j->n || j->p[j->at++] != 255)
@@ -106,16 +137,34 @@ static int nextMarker(Jpeg *j) {
 }
 
 // METADATA
-/** Read an EXIF short in the TIFF byte order. @author kai */
+/**
+ * Read a TIFF 16-bit value in the byte order declared by EXIF.
+ * @param p Two TIFF bytes to interpret.
+ * @param le Nonzero selects little-endian byte order.
+ * @return The unsigned 16-bit TIFF value.
+ * @author kai
+ */
 static unsigned ex16(const unsigned char *p, int le) {
     return le ? ((unsigned)p[1] << 8) | p[0] : j16(p);
 }
-/** Read an EXIF offset in the TIFF byte order. @author kai */
+/**
+ * Read a TIFF 32-bit value in the byte order declared by EXIF.
+ * @param p Four TIFF bytes to interpret.
+ * @param le Nonzero selects little-endian byte order.
+ * @return The unsigned 32-bit TIFF value.
+ * @author kai
+ */
 static unsigned long ex32(const unsigned char *p, int le) {
     return le ? (unsigned long)ex16(p, 1) | ((unsigned long)ex16(p + 2, 1) << 16)
               : ((unsigned long)ex16(p, 0) << 16) | ex16(p + 2, 0);
 }
-/** Resolve a bounded EXIF orientation tag, defaulting to upright. @author kai */
+/**
+ * Read a valid EXIF orientation tag; default to normal orientation when absent or malformed.
+ * @param p APP1 payload beginning with an EXIF header.
+ * @param n Available payload length, used to bound TIFF offsets.
+ * @return EXIF orientation from one through eight, defaulting to one when absent or invalid.
+ * @author kai
+ */
 static unsigned exifOrientation(const unsigned char *p, size_t n) {
     unsigned long off;
     unsigned count, i;
@@ -146,7 +195,14 @@ static unsigned exifOrientation(const unsigned char *p, size_t n) {
 }
 
 // COEFFICIENTS
-/** Validate component sampling and allocate bounded coefficient planes. @author kai */
+/**
+ * Parse JPEG frame dimensions, sampling factors, and quantization table references.
+ * @param j JPEG state receiving frame metadata.
+ * @param p Frame segment payload.
+ * @param n Payload length from the marker.
+ * @return Nonzero when frame geometry and bounded coefficient planes are valid.
+ * @author kai
+ */
 static int frame(Jpeg *j, const unsigned char *p, size_t n) {
     unsigned i;
 
@@ -209,13 +265,34 @@ static int frame(Jpeg *j, const unsigned char *p, size_t n) {
     }
     return 1;
 }
-/** Apply one progressive AC refinement bit without double application. @author kai */
+/**
+ * Apply one progressive AC refinement bit to an already nonzero coefficient.
+ * @param j Progressive JPEG decoder state.
+ * @param c Component whose coefficient block is being refined.
+ * @param bit Refinement bit to apply at the current spectral position.
+ * @return Nonzero when the refinement bits are valid.
+ * @author kai
+ */
 static int refineNonzero(Jpeg *j, int *c, unsigned bit) {
     if (jbits(j, 1) && ((unsigned)abs(*c) & bit) == 0)
         *c += *c > 0 ? (int)bit : -(int)bit;
     return !j->bad;
 }
-/** Decode sequential or progressive coefficients for one JPEG block. @author kai */
+/**
+ * Decode one JPEG block for sequential or progressive scans.
+ * @param j Decoder state for the current scan.
+ * @param c Component and predictor state for this block.
+ * @param block Receives the 64 quantized coefficients.
+ * @param dc DC Huffman table index.
+ * @param ac AC Huffman table index.
+ * @param ss First spectral coefficient in this scan.
+ * @param se Last spectral coefficient in this scan.
+ * @param ah Previous approximation bit plane.
+ * @param al Current approximation bit plane.
+ * @param eob Remaining end-of-band run for progressive AC data.
+ * @return Nonzero when the block is decoded without invalid coefficients or truncated bits.
+ * @author kai
+ */
 static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, unsigned ss,
                        unsigned se, unsigned ah, unsigned al, unsigned *eob) {
     unsigned k = ss, bit = 1U << al;
@@ -323,7 +400,14 @@ static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, 
     }
     return !j->bad;
 }
-/** Decode a scan and enforce spectral progression and restart boundaries. @author kai */
+/**
+ * Decode a JPEG scan, including restart markers and progressive coefficient updates.
+ * @param j JPEG state updated by the scan.
+ * @param p Scan segment payload and entropy-coded bytes.
+ * @param n Bytes available in the scan segment.
+ * @return Nonzero when all scan units and progressive runs decode successfully.
+ * @author kai
+ */
 static int scan(Jpeg *j, const unsigned char *p, size_t n) {
     unsigned ns, i, indices[3], dcs[3], acs[3], ss, se, ah, al, mx, my, x, y, unit = 0, eob = 0,
                                                                               rst = 0;
@@ -428,7 +512,12 @@ RECONSTRUCTION
 //////////////////////////////////////////////////*/
 
 // SAMPLE LIMITS
-/** Round a reconstructed sample into the unsigned byte range. @author kai */
+/**
+ * Round and clamp a component value to the 8-bit channel range.
+ * @param v Floating-point channel value before 8-bit clamping.
+ * @return Rounded channel value clamped to the inclusive 0–255 range.
+ * @author kai
+ */
 static unsigned char clampByte(double v) {
     if (v <= 0)
         return 0;
@@ -438,7 +527,13 @@ static unsigned char clampByte(double v) {
 }
 
 // INVERSE TRANSFORM
-/** Apply separable IDCT, centred chroma interpolation, and RGB conversion. @author kai */
+/**
+ * Convert decoded JPEG component planes to straight-alpha RGBA8 pixels.
+ * @param j Decoded component planes and sampling metadata.
+ * @param im Receives the rendered RGBA8 image.
+ * @return Nonzero when all component planes render into a complete image.
+ * @author kai
+ */
 static int render(Jpeg *j, RcImage *im) {
     double basis[8][8];
     unsigned c, x, y, u, v;
@@ -567,7 +662,13 @@ static int render(Jpeg *j, RcImage *im) {
 }
 
 // ORIENTATION
-/** Apply the eight EXIF orientations without modifying source bytes. @author kai */
+/**
+ * Apply EXIF orientation by rearranging decoded pixels and dimensions.
+ * @param im Owned image whose pixels and dimensions are transformed.
+ * @param orientation EXIF orientation value from one through eight.
+ * @return Nonzero when orientation is applied or already normal; zero on allocation failure.
+ * @author kai
+ */
 static int orientImage(RcImage *im, unsigned orientation) {
     unsigned x, y, w = im->width, h = im->height, nw = orientation >= 5 ? h : w,
                    nh = orientation >= 5 ? w : h;
@@ -604,7 +705,11 @@ API
 //////////////////////////////////////////////////*/
 
 // JPEG INPUT
-/** Decode sequential or progressive Huffman JPEG.
+/**
+ * Decode supported 8-bit Huffman JPEG data and optionally apply EXIF orientation.
+ * @param p Complete JPEG file bytes.
+ * @param n JPEG length in bytes.
+ * @param im Receives decoded RGBA8 pixels.
  * @param orient Apply EXIF orientation for standalone images; use 0 for PDF image space.
  * @return 1 with owned RGBA pixels, or 0 without a retained allocation.
  * @author kai

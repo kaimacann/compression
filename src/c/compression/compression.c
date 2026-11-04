@@ -2,8 +2,8 @@
  * @file compression.c
  * @brief Streaming Huffman codec and byte-oriented inspection helpers.
  *
- * TCMP v1 uses a 22-byte header. Raw frames store the original bytes directly;
  * Huffman frames add 256 big-endian 64-bit symbol counts before the bitstream.
+ * @author kai
  */
 
 /*//////////////////////////////////////////////////
@@ -16,8 +16,6 @@ IMPORTS
 #include <string.h>
 
 // FILE AND MEDIA CONTRACTS
-#include "../fileIO/fileInput/fileInput.h"
-#include "../fileIO/fileOutput/fileOutput.h"
 #include "compression.h"
 #include "media.h"
 
@@ -36,6 +34,60 @@ CONFIG
 #define FNV1A_OFFSET_BASIS 14695981039346656037ULL
 #define FNV1A_PRIME 1099511628211ULL
 
+// FILE TRANSACTIONS
+/**
+ * Open a source path for binary reading and report open failures.
+ * @param path Existing source file to open.
+ * @return Open binary input stream, or NULL if the path cannot be opened.
+ * @author kai
+ */
+static FILE *openInputFile(const char *path) {
+    FILE *file = path ? fopen(path, "rb") : NULL;
+    if (!file && path)
+        perror(path);
+    return file;
+}
+
+/**
+ * Create a new output path exclusively so existing files are never truncated.
+ * @param path New destination to create without truncating an existing file.
+ * @return New binary output stream, or NULL when the destination already exists or cannot be
+ * created.
+ * @author kai
+ */
+static FILE *createOutputFile(const char *path) {
+    FILE *file = path ? fopen(path, "wbx") : NULL;
+    if (!file && path)
+        perror(path);
+    return file;
+}
+
+/**
+ * Flush and close an output stream, removing its partial file if finalization fails.
+ * @param file Open output stream to close.
+ * @param path Destination path to remove if closing the stream fails.
+ * @return Nonzero when flush and close succeed; zero after removing a failed output.
+ * @author kai
+ */
+static int finishOutputFile(FILE *file, const char *path) {
+    if (fclose(file) == 0)
+        return 1;
+    perror(path);
+    remove(path);
+    return 0;
+}
+
+/**
+ * Close an output stream and remove its incomplete destination.
+ * @param file Open output stream to close.
+ * @param path Incomplete destination path to remove.
+ * @author kai
+ */
+static void discardOutputFile(FILE *file, const char *path) {
+    fclose(file);
+    remove(path);
+}
+
 #ifdef DEBUG
 #define DEBUG_LOG(...) fprintf(stderr, "[debug] " __VA_ARGS__)
 #else
@@ -51,8 +103,8 @@ typedef struct {
 } HuffmanNode;
 
 typedef struct {
-    int items[SYMBOL_COUNT];
-    int length;
+    int next[NODE_CAPACITY];
+    int head;
 } NodeQueue;
 
 typedef struct {
@@ -70,7 +122,14 @@ HUFFMAN
 //////////////////////////////////////////////////*/
 
 // TREE
-/** Order Huffman nodes by frequency with deterministic symbol tie-breaking. @author kai */
+/**
+ * Compare two Huffman nodes by weight, then by stable symbol order.
+ * @param nodes Tree nodes containing weight and stable symbol keys.
+ * @param left First node index to compare.
+ * @param right Second node index to compare.
+ * @return Nonzero when left should precede right in deterministic queue order.
+ * @author kai
+ */
 static int nodeLess(const HuffmanNode nodes[], int left, int right) {
     if (nodes[left].frequency != nodes[right].frequency)
         return nodes[left].frequency < nodes[right].frequency;
@@ -79,23 +138,44 @@ static int nodeLess(const HuffmanNode nodes[], int left, int right) {
     return left < right;
 }
 
-/** Remove the least node from the bounded candidate set. @author kai */
-static int takeMinimum(NodeQueue *queue, const HuffmanNode nodes[]) {
-    int i, minimum = 0, result;
-    // SELECT AND REMOVE
-    // At most 256 candidates make a linear scan simpler than maintaining a heap.
-    for (i = 1; i < queue->length; i++)
-        if (nodeLess(nodes, queue->items[i], queue->items[minimum]))
-            minimum = i;
-    result = queue->items[minimum];
-    queue->items[minimum] = queue->items[--queue->length];
+/**
+ * Insert a node into the frequency-ordered Huffman work queue.
+ * @param queue Sorted queue that receives the node index.
+ * @param nodes Tree nodes used to order the insertion.
+ * @param node Unused node index to insert.
+ * @author kai
+ */
+static void queueInsert(NodeQueue *queue, const HuffmanNode nodes[], int node) {
+    int *at = &queue->head;
+    while (*at >= 0 && nodeLess(nodes, *at, node))
+        at = &queue->next[*at];
+    queue->next[node] = *at;
+    *at = node;
+}
+
+/**
+ * Remove and return the lowest-weight node from the Huffman work queue.
+ * @param queue Non-empty work queue whose head has minimum weight.
+ * @return Index of the removed minimum-weight node.
+ * @author kai
+ */
+static int takeMinimum(NodeQueue *queue) {
+    int result = queue->head;
+    queue->head = queue->next[result];
     return result;
 }
 
-/** Build a bounded Huffman tree from the symbol histogram. @author kai */
+/**
+ * Build a deterministic Huffman tree from symbol frequencies and return its root.
+ * @param frequencies Count for each input byte value.
+ * @param nodes Storage for leaves and generated internal nodes.
+ * @param root Receives the root node index; -1 denotes an empty alphabet.
+ * @return Nonzero when a valid tree is built; zero if the alphabet cannot fit the node storage.
+ * @author kai
+ */
 static int buildHuffmanTree(const unsigned long long frequencies[], HuffmanNode nodes[],
                             int *root) {
-    NodeQueue queue = {{0}, 0};
+    NodeQueue queue = {{0}, -1};
     int symbol, nodeCount = 0;
 
     // SEED THE SYMBOL CANDIDATES
@@ -104,14 +184,14 @@ static int buildHuffmanTree(const unsigned long long frequencies[], HuffmanNode 
         if (frequencies[symbol] == 0)
             continue;
         nodes[nodeCount] = (HuffmanNode){frequencies[symbol], symbol, -1, -1, symbol};
-        queue.items[queue.length++] = nodeCount++;
+        queueInsert(&queue, nodes, nodeCount++);
     }
 
     // MERGE THE TWO LOWEST FREQUENCIES
     // Stable symbol tie-breaking makes the resulting prefix codes deterministic.
-    while (queue.length > 1) {
-        int left = takeMinimum(&queue, nodes);
-        int right = takeMinimum(&queue, nodes);
+    while (queue.head >= 0 && queue.next[queue.head] >= 0) {
+        int left = takeMinimum(&queue);
+        int right = takeMinimum(&queue);
         int parent = nodeCount++;
 
         if (nodes[left].frequency > ULL_MAX_VALUE - nodes[right].frequency)
@@ -120,14 +200,23 @@ static int buildHuffmanTree(const unsigned long long frequencies[], HuffmanNode 
             nodes[left].frequency + nodes[right].frequency, -1, left, right,
             nodes[left].minimumSymbol < nodes[right].minimumSymbol ? nodes[left].minimumSymbol
                                                                    : nodes[right].minimumSymbol};
-        queue.items[queue.length++] = parent;
+        queueInsert(&queue, nodes, parent);
     }
-    *root = queue.length ? queue.items[0] : -1;
+    *root = queue.head;
     return 1;
 }
 
 // PREFIX CODES
-/** Walk the Huffman tree to assign prefix bits to each symbol. @author kai */
+/**
+ * Walk a Huffman tree to assign each leaf its bit path and code length.
+ * @param nodes Completed Huffman tree.
+ * @param nodeIndex Current node index in the tree.
+ * @param path Bit path being built and copied to leaf code entries.
+ * @param depth Current recursion depth in the Huffman tree.
+ * @param codes Receives each symbol's Huffman bit sequence.
+ * @param codeLengths Receives the bit length for each byte symbol.
+ * @author kai
+ */
 static void assignCodes(const HuffmanNode nodes[], int nodeIndex, unsigned char path[], int depth,
                         unsigned char codes[][SYMBOL_COUNT], unsigned short codeLengths[]) {
     if (nodes[nodeIndex].symbol >= 0) {
@@ -152,7 +241,15 @@ CONTAINER
 //////////////////////////////////////////////////*/
 
 // SOURCE STATISTICS
-/** Count input symbols and calculate its byte count and checksum. @author kai */
+/**
+ * Count input bytes and symbol frequencies, then rewind the stream.
+ * @param input Seekable input stream to scan and rewind.
+ * @param frequencies Receives the count for each byte value.
+ * @param totalBytes Receives the total number of input bytes.
+ * @param checksum Receives the checksum of the scanned bytes.
+ * @return Nonzero when the whole stream is counted and rewound; zero on read, seek, or size error.
+ * @author kai
+ */
 static int scanInput(FILE *input, unsigned long long frequencies[], unsigned long long *totalBytes,
                      unsigned long long *checksum) {
     unsigned char buffer[BUFFER_SIZE];
@@ -177,7 +274,12 @@ static int scanInput(FILE *input, unsigned long long frequencies[], unsigned lon
     return !ferror(input);
 }
 
-/** Detect PDF, PNG, and JPEG signatures without consuming the input. @author kai */
+/**
+ * Detect PNG, JPEG, or PDF input from its leading signature bytes.
+ * @param input Seekable stream whose leading bytes identify its format.
+ * @return 1 for PNG/JPEG/PDF, 0 for other bytes, or -1 if reading or rewind fails.
+ * @author kai
+ */
 static int isMediaInput(FILE *input) {
     unsigned char signature[8];
     size_t count = fread(signature, 1, sizeof(signature), input);
@@ -188,7 +290,14 @@ static int isMediaInput(FILE *input) {
            (count >= 2 && signature[0] == 255 && signature[1] == 216);
 }
 
-/** Calculate the complete Huffman payload length with overflow checking. @author kai */
+/**
+ * Sum the encoded bit cost for all symbols using their code lengths.
+ * @param frequencies Count for each byte value.
+ * @param codeLengths Huffman code length assigned to each byte value.
+ * @param bitCount Receives the total encoded bit count, or fails on overflow.
+ * @return Nonzero when the bit total fits; zero if multiplication or addition would overflow.
+ * @author kai
+ */
 static int calculateEncodedBits(const unsigned long long frequencies[],
                                 const unsigned short codeLengths[], unsigned long long *bitCount) {
     int symbol;
@@ -208,7 +317,13 @@ static int calculateEncodedBits(const unsigned long long frequencies[],
 }
 
 // HEADER FIELDS
-/** Write an unsigned container field in big-endian order. @author kai */
+/**
+ * Write an integer as eight big-endian bytes.
+ * @param stream Destination stream.
+ * @param value Integer to encode as eight big-endian bytes.
+ * @return Nonzero when all eight bytes are written.
+ * @author kai
+ */
 static int writeUnsignedLongLong(FILE *stream, unsigned long long value) {
     unsigned char bytes[8];
     int i;
@@ -219,7 +334,13 @@ static int writeUnsignedLongLong(FILE *stream, unsigned long long value) {
     return fwrite(bytes, 1, sizeof(bytes), stream) == sizeof(bytes);
 }
 
-/** Read a complete big-endian container field. @author kai */
+/**
+ * Read an eight-byte big-endian integer and fail on a truncated stream.
+ * @param stream Source stream positioned at the integer.
+ * @param value Receives the decoded integer only after a full read.
+ * @return Nonzero when all eight bytes are read; zero for a truncated stream.
+ * @author kai
+ */
 static int readUnsignedLongLong(FILE *stream, unsigned long long *value) {
     unsigned char bytes[8];
     int i;
@@ -231,7 +352,16 @@ static int readUnsignedLongLong(FILE *stream, unsigned long long *value) {
     return 1;
 }
 
-/** Write the TCMP method, original length, checksum, and optional histogram. @author kai */
+/**
+ * Write the archive magic, mode, original size, and mode-specific metadata.
+ * @param output Destination archive stream.
+ * @param mode Archive encoding mode recorded in the header.
+ * @param originalSize Uncompressed byte count recorded for restoration.
+ * @param checksum Checksum of the original input bytes.
+ * @param frequencies Symbol counts required by Huffman mode.
+ * @return Nonzero when all required header fields are written.
+ * @author kai
+ */
 static int writeHeader(FILE *output, int mode, unsigned long long originalSize,
                        unsigned long long checksum, const unsigned long long frequencies[]) {
     unsigned char prefix[6] = {'T', 'C', 'M', 'P', 1, (unsigned char)mode};
@@ -249,7 +379,16 @@ static int writeHeader(FILE *output, int mode, unsigned long long originalSize,
     return 1;
 }
 
-/** Validate a TCMP header and its declared symbol frequencies. @author kai */
+/**
+ * Validate and parse an archive header before payload decoding.
+ * @param input Archive stream positioned at its first byte.
+ * @param mode Receives the validated encoding mode.
+ * @param originalSize Receives the expected restored byte count.
+ * @param checksum Receives the expected original-data checksum.
+ * @param frequencies Receives the Huffman symbol counts when present.
+ * @return Nonzero when the header fields and frequency total validate.
+ * @author kai
+ */
 static int readHeader(FILE *input, int *mode, unsigned long long *originalSize,
                       unsigned long long *checksum, unsigned long long frequencies[]) {
     unsigned char prefix[6];
@@ -281,8 +420,14 @@ PAYLOADS
 //////////////////////////////////////////////////*/
 
 // ENCODING
-/** Copy exactly the declared bytes and reject truncation or trailing data.
+/**
+ * Copy exactly the declared payload length and report short reads or writes.
+ * @param input Source stream positioned at the payload.
+ * @param output Destination stream for copied bytes.
+ * @param size Exact number of payload bytes to transfer.
  * @param observed Optional histogram for the encoder's second-pass validation.
+ * @param checksum Receives or verifies the payload checksum.
+ * @return Nonzero when the declared bytes copy successfully and no trailing bytes remain.
  * @author kai
  */
 static int copyPayload(FILE *input, FILE *output, unsigned long long size,
@@ -310,7 +455,17 @@ static int copyPayload(FILE *input, FILE *output, unsigned long long size,
     return fgetc(input) == EOF && !ferror(input);
 }
 
-/** Encode symbols and verify the second input scan matches the first. @author kai */
+/**
+ * Encode input symbols with the supplied Huffman codes and pad the final byte.
+ * @param input Source stream positioned at the bytes to encode.
+ * @param output Destination archive stream.
+ * @param codes Bit pattern assigned to each byte value.
+ * @param codeLengths Number of significant bits in each code.
+ * @param observed Optional counts used to verify the second input pass.
+ * @param checksum Receives the checksum of encoded source bytes.
+ * @return Nonzero when the full payload encodes and writes successfully.
+ * @author kai
+ */
 static int writeHuffmanPayload(FILE *input, FILE *output, const unsigned char codes[][SYMBOL_COUNT],
                                const unsigned short codeLengths[], unsigned long long observed[],
                                unsigned long long *checksum) {
@@ -358,12 +513,25 @@ static int writeHuffmanPayload(FILE *input, FILE *output, const unsigned char co
 }
 
 // VALIDATION
-/** Compare complete symbol histograms. @author kai */
+/**
+ * Check whether two symbol-frequency tables match exactly.
+ * @param first First byte-frequency table.
+ * @param second Second byte-frequency table to compare.
+ * @return Nonzero only when every symbol count matches.
+ * @author kai
+ */
 static int sameFrequencies(const unsigned long long first[], const unsigned long long second[]) {
     return memcmp(first, second, sizeof(unsigned long long) * SYMBOL_COUNT) == 0;
 }
 
-/** Read one high-order Huffman payload bit. @author kai */
+/**
+ * Read one payload bit, loading the next byte when needed.
+ * @param input Encoded payload stream.
+ * @param reader Persistent bit-reader state.
+ * @param bit Receives the next bit, or remains unchanged on failure.
+ * @return Nonzero when one bit is read; zero at end of input.
+ * @author kai
+ */
 static int bitReaderGet(FILE *input, BitReader *reader, int *bit) {
     if (reader->remaining == 0) {
         int next = fgetc(input);
@@ -377,7 +545,13 @@ static int bitReaderGet(FILE *input, BitReader *reader, int *bit) {
     return 1;
 }
 
-/** Reject nonzero padding and trailing payload bytes. @author kai */
+/**
+ * Check that the Huffman payload ends with valid zero padding and no extra data.
+ * @param input Payload stream after the expected symbols were decoded.
+ * @param reader Reader state containing unused padding bits.
+ * @return Nonzero when remaining padding is zero and no trailing data exists.
+ * @author kai
+ */
 static int finishBitReader(FILE *input, const BitReader *reader) {
     int next;
     if (reader->remaining > 0) {
@@ -389,7 +563,18 @@ static int finishBitReader(FILE *input, const BitReader *reader) {
     return next == EOF && !ferror(input);
 }
 
-/** Restore a Huffman payload and validate counts, checksum, and padding. @author kai */
+/**
+ * Decode exactly the original byte count and write each recovered symbol.
+ * @param input Encoded payload stream.
+ * @param output Destination for restored bytes.
+ * @param originalSize Exact number of bytes to decode.
+ * @param frequencies Expected counts used to reject invalid symbols.
+ * @param nodes Validated Huffman tree nodes.
+ * @param root Root index of the decoding tree.
+ * @param checksum Receives the checksum of restored bytes.
+ * @return Nonzero when all symbols, frequencies, padding, and output writes validate.
+ * @author kai
+ */
 static int writeDecodedHuffman(FILE *input, FILE *output, unsigned long long originalSize,
                                const unsigned long long frequencies[], const HuffmanNode nodes[],
                                int root, unsigned long long *checksum) {
@@ -428,7 +613,13 @@ API
 //////////////////////////////////////////////////*/
 
 // FORMAT ROUTING
-/** Dispatch recognised media losslessly and archive other input. @author kai */
+/**
+ * Compress a file into the repository archive format, preserving input on failure.
+ * @param inputPath Source file path.
+ * @param outputPath New archive or processed-media destination.
+ * @return Nonzero when media processing or TCMP archiving succeeds.
+ * @author kai
+ */
 int compressFile(const char *inputPath, const char *outputPath) {
     FILE *input = openInputFile(inputPath);
     MediaOptions options = {0, 0, 16, 0.5, NULL};
@@ -443,7 +634,13 @@ int compressFile(const char *inputPath, const char *outputPath) {
 }
 
 // ARCHIVE OPERATIONS
-/** Write a new TCMP archive, selecting Huffman only when its frame is smaller. @author kai */
+/**
+ * Encode a supported media file and its vector exports as one archive.
+ * @param inputPath Source file path.
+ * @param outputPath New archive destination; an existing file is preserved.
+ * @return Nonzero when the archive is written and verified against a second source pass.
+ * @author kai
+ */
 int archiveFile(const char *inputPath, const char *outputPath) {
     FILE *input = openInputFile(inputPath);
     FILE *output = NULL;
@@ -459,7 +656,7 @@ int archiveFile(const char *inputPath, const char *outputPath) {
     unsigned char codes[SYMBOL_COUNT][SYMBOL_COUNT] = {{0}};
     unsigned char codePath[SYMBOL_COUNT];
     unsigned short codeLengths[SYMBOL_COUNT] = {0};
-    int root;
+    int root = -1;
     int useHuffman;
 
     // VALIDATE SOURCE AND DESTINATION
@@ -546,7 +743,13 @@ closeInput:
     return 0;
 }
 
-/** Validate and restore a TCMP archive into a new file. @author kai */
+/**
+ * Validate and restore an archive to a staged output file.
+ * @param inputPath Source file path.
+ * @param outputPath New destination for the restored input.
+ * @return Nonzero when the archive validates and its restored output is finalized.
+ * @author kai
+ */
 int decompressFile(const char *inputPath, const char *outputPath) {
     FILE *input = openInputFile(inputPath);
     FILE *output = NULL;
@@ -618,14 +821,27 @@ INSPECTION
 //////////////////////////////////////////////////*/
 
 // HISTOGRAM SORTING
-/** Compare histogram records by descending frequency and symbol tie-break. @author kai */
+/**
+ * Order symbols by frequency with a stable byte-value tie break.
+ * @param left First symbol and frequency pair.
+ * @param right Second pair used for stable ordering.
+ * @return Nonzero when left ranks before right by frequency and byte value.
+ * @author kai
+ */
 static int frequencyBefore(const SymbolFrequency *left, const SymbolFrequency *right) {
     if (left->frequency != right->frequency)
         return left->frequency > right->frequency;
     return left->symbol < right->symbol;
 }
 
-/** Sort histogram records by recursively merging adjacent ranges. @author kai */
+/**
+ * Sort symbol records by frequency using the supplied scratch array.
+ * @param values Symbol records to sort in place.
+ * @param scratch Temporary array with room for the same records.
+ * @param begin Inclusive first index of the range.
+ * @param end Exclusive end index of the range.
+ * @author kai
+ */
 static void mergeSortFrequencies(SymbolFrequency values[], SymbolFrequency scratch[], int begin,
                                  int end) {
     int middle, left = begin, right, out = begin;
@@ -650,7 +866,12 @@ static void mergeSortFrequencies(SymbolFrequency values[], SymbolFrequency scrat
     memcpy(values + begin, scratch + begin, (size_t)(end - begin) * sizeof(*values));
 }
 
-/** Print byte count and the ten most frequent byte values. @author kai */
+/**
+ * Report format and size information for an input file.
+ * @param inputPath Source file path.
+ * @return Nonzero when the file is read and its statistics are reported.
+ * @author kai
+ */
 int inspectFile(const char *inputPath) {
     FILE *input = openInputFile(inputPath);
     unsigned long long frequencies[SYMBOL_COUNT];
@@ -698,7 +919,13 @@ int inspectFile(const char *inputPath) {
 }
 
 // BYTE SEARCH
-/** Search literal input bytes with KMP and report match offsets. @author kai */
+/**
+ * Search a file for a literal byte pattern and report matching offsets.
+ * @param inputPath Source file to scan.
+ * @param pattern Non-empty byte sequence to find.
+ * @return 1 on success, otherwise 0.
+ * @author kai
+ */
 int searchFile(const char *inputPath, const char *pattern) {
     FILE *input;
     size_t patternLength;
