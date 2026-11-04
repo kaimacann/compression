@@ -8,7 +8,7 @@
  */
 int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials) { //This is being passed a pointer to the start of the 2d array.
     if (*num_credentials < MAX_ACCOUNTS) {
-        FILE *file = fopen(ACCOUNT_FILE, "wb");
+        FILE *file = fopen(ACCOUNT_FILE, "wbx");
         if (file == NULL) {
             printf("Error in Create Account");
             return 1; // Failure: unable to create account file.
@@ -16,14 +16,26 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
 
         printf("Create a new account:\n");
         printf("Enter username: ");
-        if (fgets(credentials[*num_credentials][0], CREDENTIAL_LENGTH, stdin) != NULL) {
-            credentials[*num_credentials][0][strcspn(credentials[*num_credentials][0], "\n")] = '\0'; // Remove newline character
+        if (fgets(credentials[*num_credentials][0], CREDENTIAL_LENGTH, stdin) == NULL ||
+            credentials[*num_credentials][0][0] == '\n' ||
+            (strchr(credentials[*num_credentials][0], '\n') == NULL && getchar() != '\n' &&
+             !feof(stdin))) {
+            fclose(file);
+            remove(ACCOUNT_FILE);
+            return 1;
         }
+        credentials[*num_credentials][0][strcspn(credentials[*num_credentials][0], "\n")] = '\0';
 
         printf("Enter password: ");
-        if (fgets(credentials[*num_credentials][1], CREDENTIAL_LENGTH, stdin) != NULL) {
-            credentials[*num_credentials][1][strcspn(credentials[*num_credentials][1], "\n")] = '\0'; // Remove newline character
+        if (fgets(credentials[*num_credentials][1], CREDENTIAL_LENGTH, stdin) == NULL ||
+            credentials[*num_credentials][1][0] == '\n' ||
+            (strchr(credentials[*num_credentials][1], '\n') == NULL && getchar() != '\n' &&
+             !feof(stdin))) {
+            fclose(file);
+            remove(ACCOUNT_FILE);
+            return 1;
         }
+        credentials[*num_credentials][1][strcspn(credentials[*num_credentials][1], "\n")] = '\0';
 
         (*num_credentials)++;
 
@@ -31,11 +43,18 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
         for (; i < *num_credentials; i++) {
             int j = 0;
             for (; j < 2; j++) {
-                fwrite(credentials[i][j], sizeof(char), CREDENTIAL_LENGTH, file);
+                if (fwrite(credentials[i][j], 1, CREDENTIAL_LENGTH, file) != CREDENTIAL_LENGTH) {
+                    fclose(file);
+                    remove(ACCOUNT_FILE);
+                    return 1;
+                }
             }
         }
 
-        fclose(file);
+        if (fclose(file) != 0) {
+            remove(ACCOUNT_FILE);
+            return 1;
+        }
         printf("New account created successfully!\n\n");
         return 0; // Success: account created.
     } else {
@@ -57,20 +76,22 @@ int loadCredentials (char credentials[][2][CREDENTIAL_LENGTH], int *num_credenti
     }
 
     // Read existing credentials from the file
+    *num_credentials = 0;
     for (int i = 0; i < MAX_ACCOUNTS; i++) {
         size_t username_read = fread(credentials[i][0], sizeof(char), CREDENTIAL_LENGTH, file); //Finds length of current account
-        if (username_read != CREDENTIAL_LENGTH) {
-            break; //Breaks if no username is found, i.e. end of file is reached.
-        };
-        size_t password_read = fread(credentials[i][1], sizeof(char), CREDENTIAL_LENGTH, file);
-        if (password_read != CREDENTIAL_LENGTH) {
+        if (username_read != CREDENTIAL_LENGTH ||
+            memchr(credentials[i][0], '\0', CREDENTIAL_LENGTH) == NULL)
             break;
-        }
+        size_t password_read = fread(credentials[i][1], sizeof(char), CREDENTIAL_LENGTH, file);
+        if (password_read != CREDENTIAL_LENGTH ||
+            memchr(credentials[i][1], '\0', CREDENTIAL_LENGTH) == NULL)
+            break;
 
         (*num_credentials) += 1;
     }
 
-    fclose(file);
+    if (fclose(file) != 0 || *num_credentials == 0)
+        return 1;
     return 0; // Success: credentials loaded.
 }
 
@@ -89,6 +110,8 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
         if (fgets(username, CREDENTIAL_LENGTH, stdin) == NULL) {
             return 1;
         }
+        if (strchr(username, '\n') == NULL && getchar() != '\n' && !feof(stdin))
+            return 1;
         username[strcspn(username, "\n")] = '\0';
 
         if (strcmp(username, "-1") == 0) {
@@ -99,6 +122,8 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
         if (fgets(password, CREDENTIAL_LENGTH, stdin) == NULL) {
             return 1;
         }
+        if (strchr(password, '\n') == NULL && getchar() != '\n' && !feof(stdin))
+            return 1;
         password[strcspn(password, "\n")] = '\0';
 
         if (strcmp(password, "-1") == 0) {
