@@ -87,7 +87,10 @@ int encryptFile(const char *filename, unsigned long long key) {
 
     //start encryption/decryption
 
-    initCipher(&cipher, key);
+    if (initCipher(&cipher, key) != 0) {
+        fclose(file);
+        return 1;
+    }
 
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) { //reads file into buffer
         if (performCipher(&cipher, buffer, bytes_read) !=0) {
@@ -112,6 +115,7 @@ int encryptFile(const char *filename, unsigned long long key) {
     }
 
     if (ferror(file)) {
+        fclose(file);
         return 1; //returns failure if an error occurs during reading the file
     }
 

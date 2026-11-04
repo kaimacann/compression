@@ -11,12 +11,16 @@ SOURCES := \
 	src/c/compression/codec.c \
 	src/c/compression/jpeg.c \
 	src/c/compression/vector.c \
-	src/c/compression/media.c
+	src/c/compression/media.c \
+	src/c/encryption/encryption.c \
+	src/c/login/login.c
 
 HEADERS := \
 	src/c/compression/compression.h \
 	src/c/compression/codec.h \
-	src/c/compression/media.h
+	src/c/compression/media.h \
+	src/c/encryption/encryption.h \
+	src/c/login/login.h
 
 .PHONY: all run clean format-c format-c-check check-doc-params
 

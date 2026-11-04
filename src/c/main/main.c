@@ -12,6 +12,34 @@ IMPORTS
 
 #include "../compression/compression.h"
 #include "../compression/media.h"
+#include "../encryption/encryption.h"
+#include "../login/login.h"
+
+/** Archive TCMP files with the coursework stream cipher's fixed demonstration key. */
+static int compressAndEncrypt(const char *inputPath, const char *outputPath) {
+    if (!archiveFile(inputPath, outputPath))
+        return 0;
+    if (encryptFile(outputPath, KEY) != 0) {
+        fprintf(stderr, "Could not encrypt the archive: %s\n", outputPath);
+        return 0;
+    }
+    return 1;
+}
+
+/** Decrypt an archive for restoration, then put its encrypted source back as it was. */
+static int decryptAndDecompress(const char *inputPath, const char *outputPath) {
+    int restored;
+    if (encryptFile(inputPath, KEY) != 0) {
+        fprintf(stderr, "Could not decrypt the archive: %s\n", inputPath);
+        return 0;
+    }
+    restored = decompressFile(inputPath, outputPath);
+    if (encryptFile(inputPath, KEY) != 0) {
+        fprintf(stderr, "Could not restore the encrypted archive: %s\n", inputPath);
+        return 0;
+    }
+    return restored;
+}
 
 /*//////////////////////////////////////////////////
 CLI
@@ -119,9 +147,9 @@ static int runCommand(int argc, char **argv) {
         return 1;
     }
     if (argc == 4 && !strcmp(argv[1], "compress"))
-        return archiveFile(argv[2], argv[3]);
+        return compressAndEncrypt(argv[2], argv[3]);
     if (argc == 4 && !strcmp(argv[1], "decompress"))
-        return decompressFile(argv[2], argv[3]);
+        return decryptAndDecompress(argv[2], argv[3]);
     if (argc == 3 && !strcmp(argv[1], "inspect"))
         return inspectFile(argv[2]);
     if (argc == 4 && !strcmp(argv[1], "search"))
@@ -283,8 +311,12 @@ static int runInteractiveAction(const char *label, int (*action)(const char *, c
             puts("Invalid compression type.");
             return 1;
         }
-    } else if (!strcmp(label, "Compression"))
+    } else if (!strcmp(label, "Compression")) {
         extension = "tcmp";
+        action = compressAndEncrypt;
+    } else if (!strcmp(label, "Decompression")) {
+        action = decryptAndDecompress;
+    }
     status =
         readPath("Output path (Enter for sibling -compressed name): ", output, sizeof(output), 1);
     if (status <= 0)
@@ -360,6 +392,12 @@ ENTRY POINT
  * @author haadi
  */
 int main(int argc, char **argv) {
-    int status = argc == 1 ? runMenu() : runCommand(argc, argv);
+    int status;
+    if (!(argc == 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h"))) &&
+        loginFunction() != 0) {
+        fputs("Login failed; access denied.\n", stderr);
+        return EXIT_FAILURE;
+    }
+    status = argc == 1 ? runMenu() : runCommand(argc, argv);
     return status ? EXIT_SUCCESS : EXIT_FAILURE;
 }

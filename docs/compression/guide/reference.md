@@ -78,7 +78,7 @@ The compression module owns file streams, `TCMP` framing, and the Huffman tree. 
     <tr><td>Inspection</td><td>Byte count and sorted byte-frequency summary.</td></tr>
     <tr><td>Search</td><td>Literal byte sequence search with Knuth–Morris–Pratt; no semantic document parsing.</td></tr>
     <tr><td>Output</td><td>New file only; existing destinations are rejected; incomplete outputs are removed after detected failures when the filesystem permits.</td></tr>
-    <tr><td>Encryption</td><td>Not included in the executable.</td></tr>
+    <tr><td>Login and archive encryption</td><td>Login gates menu and command use. Ordinary-file TCMP archives are encrypted after archiving and decrypted for restoration; the archive is then re-encrypted. Coursework-only implementation: plaintext passwords and fixed-key XOR are not production security.</td></tr>
     <tr><td>Raster images</td><td>PNG and baseline/progressive JPEG decode to RGBA; vector mode quantizes and traces them to SVG.</td></tr>
     <tr><td>PDF</td><td>Vector mode processes supported embedded image streams, exports SVG sidecars, preserves other page objects, and selects a rebuilt PDF only when smaller. Unsupported objects are retained and reported.</td></tr>
     <tr><td>Interoperability</td><td><code>TCMP</code> is private to this repository and is not ZIP, gzip, zlib, or a published standard.</td></tr>

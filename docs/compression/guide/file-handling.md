@@ -52,6 +52,6 @@ Byte archiving preserves all source bytes but does not preserve format metadata 
 
 ## Security and implementation boundary
 
-The executable does not encrypt content, authenticate users, store passwords, protect data at rest, or provide an API or hosted review interface. The separate educational encryption code is excluded from the executable.
+The executable requires a local login before running its menu or commands. Ordinary-file `TCMP` archives are encrypted after archiving and decrypted before restoration; the encrypted archive is restored afterward. Media processing outputs bypass this archive encryption flow. This is coursework code: `.login` stores plaintext credentials, and the fixed-key XOR stream cipher is not secure encryption. Do not use it to protect sensitive data.
 
 The authored business and technical specifications describe proposals that require further scope and dependency decisions. This CLI does not implement the proposed storage services or hosted API.

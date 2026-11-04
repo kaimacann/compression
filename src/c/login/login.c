@@ -28,9 +28,9 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
         (*num_credentials)++;
 
         int i = 0;
-        for (i; i < *num_credentials; i++) {
+        for (; i < *num_credentials; i++) {
             int j = 0;
-            for (j; j < 2; j++){
+            for (; j < 2; j++) {
                 fwrite(credentials[i][j], sizeof(char), CREDENTIAL_LENGTH, file);
             }
         }
@@ -106,7 +106,7 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
         }
 
         int i = 0;
-        for (i; i < num_credentials; i++) {
+        for (; i < num_credentials; i++) {
             if (strcmp(username, credentials[i][0]) == 0 &&
                 strcmp(password, credentials[i][1]) == 0) {
                     printf("Login successful.\n");
@@ -121,7 +121,7 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
  * @return 1 if loading or initial account creation fails; otherwise 0 after the prompt exits.
  * @author marceline
  */
-int loginFunction() {
+int loginFunction(void) {
     char credentials[MAX_ACCOUNTS][2][CREDENTIAL_LENGTH]; // Creates 3D array to hold usernames and passwords.
     int num_credentials = 0;
     if (loadCredentials(credentials, &num_credentials) != 0) {
@@ -129,11 +129,11 @@ int loginFunction() {
         return 1; // Failure
     }
 
-    if (authenticateUser(credentials, num_credentials) == 0) {
-        printf("Logged in successfully.");
+    if (authenticateUser(credentials, num_credentials) != 0) {
+        printf("Exiting program.\n");
+        return 1;
     }
 
-    printf("Exiting program.\n");
-
-    return 0; // Success
+    printf("Logged in successfully.\n");
+    return 0;
 }

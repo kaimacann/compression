@@ -11,11 +11,11 @@ pnpm install --frozen-lockfile
 make run
 ```
 
-The first command installs the locked Docs dependencies. `make run` builds `compression-demo` when its sources are newer, then opens its interactive menu. Enter a menu choice and follow the prompts. The program checks that the input can be read before asking for any further details. For PNG, JPEG, and PDF inputs, choose to preserve the media unchanged or use Terra sketch vectorization. Vector mode is intentionally aggressive: its two-colour default targets simple, low-detail, single-ink sketches, can discard important detail, and is not general-purpose image compression. Keep the original when fidelity matters. PDF mode rebuilds a smaller PDF when possible and exports SVG sidecars; image inputs produce SVG. Ordinary files use the lossless `TCMP` byte archive. Leave the output blank to use a sibling name: unchanged media keeps its extension, vectorized images use `.svg`, PDFs keep `.pdf`, and byte archives use `.tcmp` (for example, `test.jpeg` becomes `test-compressed.svg` in vector mode). `decompress` restores only `TCMP` archives; SVG vectorization is lossy and cannot be reversed. To stop the menu, choose its exit option; `Ctrl+C` also stops it.
+The first command installs the locked Docs dependencies. `make run` builds `compression-demo`, then asks you to create or enter a local account before opening the menu. Command-line operations also require sign-in. Ordinary files are archived as lossless `TCMP` data and the resulting archive is encrypted; the restore option decrypts it for decompression and leaves the archive encrypted. PNG, JPEG, and PDF media processing offers unchanged or Terra sketch vector output; these media outputs do not use the `TCMP` encryption flow. Vector mode is intentionally aggressive: its two-colour default targets simple, low-detail, single-ink sketches, can discard important detail, and is not general-purpose image compression. Keep the original when fidelity matters. PDF mode rebuilds a smaller PDF when possible and exports SVG sidecars; image inputs produce SVG. Leave the output blank to use a sibling name: unchanged media keeps its extension, vectorized images use `.svg`, PDFs keep `.pdf`, and byte archives use `.tcmp`. `decompress` restores only `TCMP` archives; SVG vectorization is lossy and cannot be reversed. To stop the menu, choose its exit option; `Ctrl+C` also stops it.
 
 ## Makefile walkthrough
 
-The Makefile builds one executable from `src/c/main` and `src/c/compression`. `SOURCES` lists its C translation units; `HEADERS` lists headers whose changes must trigger a rebuild. `$(CC)` is the compiler, `$(CPPFLAGS)` supplies preprocessor options, `$(CFLAGS)` selects C11 and warning flags, and `$(LDLIBS)` links the math library. Override them on the command line when needed, for example `make CC=clang` or `make CFLAGS='-std=c11 -Wall -Wextra -pedantic -g -O0'`.
+The Makefile builds one executable from `src/c/main`, `src/c/compression`, `src/c/encryption`, and `src/c/login`. `SOURCES` lists its C translation units; `HEADERS` lists headers whose changes must trigger a rebuild. `$(CC)` is the compiler, `$(CPPFLAGS)` supplies preprocessor options, `$(CFLAGS)` selects C11 and warning flags, and `$(LDLIBS)` links the math library. Override them on the command line when needed, for example `make CC=clang` or `make CFLAGS='-std=c11 -Wall -Wextra -pedantic -g -O0'`.
 
 | Command                 | Purpose                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------ |
@@ -45,7 +45,7 @@ The Makefile builds one executable from `src/c/main` and `src/c/compression`. `S
 - [Assessment](docs/assessment/): assignment information and separately labelled business and technical specifications.
 - [Compression guide](docs/compression/): installation, command-line use, file handling, and reference material.
 
-The C program is a coursework project. It does not encrypt files; vector mode is lossy, and `TCMP` is not a standard archive format.
+The C program is a coursework project. Its login stores plaintext credentials and its fixed-key XOR stream cipher is educational only; neither provides production security. Vector mode is lossy, and `TCMP` is not a standard archive format.
 
 ## License
 
