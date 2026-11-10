@@ -11,7 +11,7 @@
   "scripts": {
     "docs": "docs dev --port 3010",
     "docs:doxygen": "doxygen config/Doxyfile",
-    "build": "docs build --out dist/docs",
+    "build": "make && docs build --out dist/docs",
     "quality": "node scripts/terra-quality.mjs",
     "format:c": "make format-c",
     "format:c:check": "make format-c-check",

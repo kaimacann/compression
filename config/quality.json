@@ -10,10 +10,6 @@
   },
   "qualityCommands": [
     {
-      "name": "compression-build",
-      "command": "make"
-    },
-    {
       "name": "c-doc-params",
       "command": "make",
       "args": ["check-doc-params"]

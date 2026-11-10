@@ -67,3 +67,6 @@ dist/.docs/
 vendor/
 output/*
 docs/doxygen/*
+
+# Error logs
+error.log
