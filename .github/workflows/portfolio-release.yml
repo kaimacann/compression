@@ -1,0 +1,29 @@
+name: Notify portfolio of app release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: portfolio-token
+        with:
+          app-id: ${{ secrets.SOURCE_APP_ID }}
+          private-key: ${{ secrets.SOURCE_APP_PRIVATE_KEY }}
+          owner: kaimacann
+          repositories: portfolio
+      - name: Dispatch exact main commit
+        env:
+          GH_TOKEN: ${{ steps.portfolio-token.outputs.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          jq -nc --arg repo "$SOURCE_REPOSITORY" --arg sha "$SOURCE_SHA" \
+            '{event_type:"mounted-app-main",client_payload:{repository:$repo,sha:$sha}}' |
+            gh api repos/kaimacann/portfolio/dispatches --method POST --input -
