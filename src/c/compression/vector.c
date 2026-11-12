@@ -7,16 +7,34 @@ IMPORTS
 //////////////////////////////////////////////////*/
 
 /* SHARED CONTRACT*/
+#include "codec.h"
 #include "media.h"
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+#include <stdio.h>
 
 /*//////////////////////////////////////////////////
 CONFIG
 //////////////////////////////////////////////////*/
 
 /* PROCESSING STATE*/
+enum {
+    ALPHA_CHANNEL = 3,
+    COLOR_CHANNELS = 4,
+    COLOR_BUCKET_SHIFT = 4,
+    COLOR_CHANNEL_MAX = 255,
+    COLOR_KEY_COUNT = 65536,
+    MAX_PALETTE_COLORS = 256,
+    INITIAL_POINT_CAPACITY = 256,
+    MIN_SIMPLIFY_POINTS = 5,
+    PATH_FORMAT_CAPACITY = 96
+};
+static const unsigned ALPHA_DISTANCE_WEIGHT = 2;
 typedef struct {
-    unsigned long count, sum[4];
-    unsigned char value[4], label;
+    unsigned long count, sum[COLOR_CHANNELS];
+    unsigned char value[COLOR_CHANNELS], label;
 } ColorBin;
 typedef struct {
     unsigned begin, end;
@@ -33,8 +51,23 @@ typedef struct {
 } Points;
 static unsigned sortChannel;
 /* Pixel-corner directions run clockwise: east, south, west, north.*/
-static const int stepX[4] = {1, 0, -1, 0}, stepY[4] = {0, 1, 0, -1};
+static const int stepX[COLOR_CHANNELS] = {1, 0, -1, 0}, stepY[COLOR_CHANNELS] = {0, 1, 0, -1};
 
+/**
+ * Append bounded formatted text, checking the formatter result before reading the buffer.
+ * @param buffer Destination buffer that owns the appended bytes.
+ * @param format Format string with values that fit the fixed output capacity.
+ * @return Nonzero when formatted bytes are appended; zero on formatting, capacity, or allocation
+ * failure.
+ * @author kai
+ */
+/**
+ * Copy a known number of contour points without invoking an unbounded byte-copy API.
+ * @param destination Point array receiving the copied values.
+ * @param source Point array supplying the values.
+ * @param count Number of points to copy.
+ * @author kai
+ */
 /*//////////////////////////////////////////////////
 PALETTE
 //////////////////////////////////////////////////*/
@@ -42,33 +75,261 @@ PALETTE
 /* LABELS*/
 /**
  * Map an RGBA pixel to a 16-bit histogram bucket; transparent pixels share bucket zero.
- * @param p One RGBA pixel to quantize into a histogram bucket.
+ * @param pixel One RGBA pixel to quantize into a histogram bucket.
  * @return 16-bit histogram key; fully transparent pixels map to zero.
  * @author kai
  */
-static unsigned colorKey(const unsigned char *p) {
-    if (!p[3])
+static unsigned colorKey(const unsigned char *pixel) {
+    if (!pixel[ALPHA_CHANNEL]) {
         return 0;
-    return ((unsigned)(p[0] >> 4) << 12) | ((unsigned)(p[1] >> 4) << 8) |
-           ((unsigned)(p[2] >> 4) << 4) | (p[3] >> 4);
+    }
+    return ((unsigned)(pixel[0] >> COLOR_BUCKET_SHIFT) << 12) |
+           ((unsigned)(pixel[1] >> COLOR_BUCKET_SHIFT) << 8) |
+           ((unsigned)(pixel[2] >> COLOR_BUCKET_SHIFT) << COLOR_BUCKET_SHIFT) |
+           (pixel[ALPHA_CHANNEL] >> COLOR_BUCKET_SHIFT);
 }
 /**
  * Order colour bins on the channel selected for the current median cut.
- * @param a First ColorBin supplied to qsort.
- * @param b Second ColorBin supplied to qsort.
+ * @param left First ColorBin supplied to qsort.
+ * @param right Second ColorBin supplied to qsort.
  * @return Negative, zero, or positive according to selected channel and stable colour order.
  * @author kai
  */
-static int compareBins(const void *a, const void *b) {
-    const ColorBin *x = a, *y = b;
-    int difference = (int)x->value[sortChannel] - y->value[sortChannel];
-    return difference ? difference : memcmp(x->value, y->value, 4);
+static int compareBins(const void *left,
+                       const void *right) { // NOLINT(bugprone-easily-swappable-parameters) -- qsort
+                                            // requires two identically typed element pointers.
+    const ColorBin *leftBin = left;
+    const ColorBin *rightBin = right;
+    int difference = (int)leftBin->value[sortChannel] - rightBin->value[sortChannel];
+    return difference ? difference : memcmp(leftBin->value, rightBin->value, COLOR_CHANNELS);
 }
 
 /* MEDIAN CUT*/
 /**
  * Build a population-weighted palette and assign each pixel to its nearest entry.
- * @param im Decoded RGBA image to quantize.
+ * @param image Decoded RGBA image to quantize.
+ * @param histogramOutput Receives the populated histogram.
+ * @param binsOutput Receives compact entries for occupied histogram buckets.
+ * @param binCountOutput Receives the number of occupied buckets.
+ * @return Nonzero when palette labels are populated; zero on allocation failure.
+ * @author kai
+ */
+static int collectColorBins(const RcImage *image, ColorBin **histogramOutput, ColorBin **binsOutput,
+                            unsigned *binCountOutput) {
+    ColorBin *histogram = calloc(COLOR_KEY_COUNT, sizeof(*histogram));
+    ColorBin *bins;
+    unsigned binCount = 0;
+    unsigned bucketIndex;
+    unsigned channelIndex;
+    size_t pixelIndex;
+    size_t pixelCount = (size_t)image->width * image->height;
+    if (!histogram) {
+        return 0;
+    }
+    for (pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
+        const unsigned char *pixel = image->rgba + (pixelIndex * COLOR_CHANNELS);
+        ColorBin *bin = &histogram[colorKey(pixel)];
+        bin->count++;
+        for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
+            bin->sum[channelIndex] += pixel[ALPHA_CHANNEL] ? pixel[channelIndex] : 0;
+        }
+    }
+    for (bucketIndex = 0; bucketIndex < COLOR_KEY_COUNT; bucketIndex++) {
+        if (histogram[bucketIndex].count) {
+            binCount++;
+        }
+    }
+    /* Median cuts operate on occupied buckets rather than the complete colour key space. */
+    bins = malloc(binCount * sizeof(*bins));
+    if (!bins) {
+        free(histogram);
+        return 0;
+    }
+    binCount = 0;
+    for (bucketIndex = 0; bucketIndex < COLOR_KEY_COUNT; bucketIndex++) {
+        if (histogram[bucketIndex].count) {
+            for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
+                histogram[bucketIndex].value[channelIndex] =
+                    (unsigned char)(histogram[bucketIndex].sum[channelIndex] /
+                                    histogram[bucketIndex].count);
+            }
+            bins[binCount++] = histogram[bucketIndex];
+        }
+    }
+    *histogramOutput = histogram;
+    *binsOutput = bins;
+    *binCountOutput = binCount;
+    return 1;
+}
+
+/**
+ * Measure the strongest population-weighted channel range in a colour box.
+ * @param bins Occupied colour buckets being examined.
+ * @param box Range of bins to score.
+ * @param channelOutput Receives the strongest channel index.
+ * @param populationOutput Receives the total pixel count in the box.
+ * @return Population-weighted range score, or zero when the box cannot be split.
+ * @author kai
+ */
+static unsigned long scoreColorBox(const ColorBin *bins, ColorBox box, unsigned *channelOutput,
+                                   unsigned long *populationOutput) {
+    unsigned minimum[COLOR_CHANNELS] = {COLOR_CHANNEL_MAX, COLOR_CHANNEL_MAX, COLOR_CHANNEL_MAX,
+                                        COLOR_CHANNEL_MAX};
+    unsigned maximum[COLOR_CHANNELS] = {0};
+    unsigned channelIndex;
+    unsigned binIndex;
+    unsigned long population = 0;
+    unsigned long bestScore = 0;
+    if (box.end - box.begin < 2) {
+        return 0;
+    }
+    for (binIndex = box.begin; binIndex < box.end; binIndex++) {
+        population += bins[binIndex].count;
+        for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
+            if (bins[binIndex].value[channelIndex] < minimum[channelIndex]) {
+                minimum[channelIndex] = bins[binIndex].value[channelIndex];
+            }
+            if (bins[binIndex].value[channelIndex] > maximum[channelIndex]) {
+                maximum[channelIndex] = bins[binIndex].value[channelIndex];
+            }
+        }
+    }
+    for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
+        unsigned long score = (maximum[channelIndex] - minimum[channelIndex]) *
+                              (unsigned long)sqrt((double)population);
+        if (score > bestScore) {
+            bestScore = score;
+            *channelOutput = channelIndex;
+        }
+    }
+    *populationOutput = population;
+    return bestScore;
+}
+
+/**
+ * Select the box with the largest population-weighted channel range.
+ * @param bins Occupied colour buckets to split.
+ * @param boxes Current palette partition ranges.
+ * @param boxCount Number of current boxes.
+ * @param channelOutput Receives the channel to sort on.
+ * @param populationOutput Receives the selected box population.
+ * @return Selected box index or MAX_PALETTE_COLORS when no box can be split.
+ * @author kai
+ */
+static unsigned chooseColorBox(const ColorBin *bins, const ColorBox *boxes, unsigned boxCount,
+                               unsigned *channelOutput, unsigned long *populationOutput) {
+    unsigned chosenBox = MAX_PALETTE_COLORS;
+    unsigned boxIndex;
+    unsigned long bestScore = 0;
+    for (boxIndex = 0; boxIndex < boxCount; boxIndex++) {
+        unsigned candidateChannel = 0;
+        unsigned long population = 0;
+        unsigned long score = scoreColorBox(bins, boxes[boxIndex], &candidateChannel, &population);
+        if (score > bestScore) {
+            bestScore = score;
+            chosenBox = boxIndex;
+            *channelOutput = candidateChannel;
+            *populationOutput = population;
+        }
+    }
+    return chosenBox;
+}
+
+/**
+ * Split one bin range near its population-weighted median.
+ * @param bins Colour buckets that are sorted and divided in place.
+ * @param boxes Current ranges to update.
+ * @param boxCount Number of boxes before appending the new range.
+ * @param chosenBox Range index selected for splitting.
+ * @param channel Channel used to sort the selected range.
+ * @param population Total pixel population in the selected range.
+ * @author kai
+ */
+static void splitColorBox(ColorBin *bins, ColorBox *boxes, unsigned boxCount, unsigned chosenBox,
+                          unsigned channel, unsigned long population) {
+    ColorBox box = boxes[chosenBox];
+    unsigned split = box.begin + 1;
+    unsigned binIndex;
+    unsigned long populationAtSplit = 0;
+    sortChannel = channel;
+    qsort(bins + box.begin, box.end - box.begin, sizeof(*bins), compareBins);
+    for (binIndex = box.begin; binIndex + 1 < box.end; binIndex++) {
+        populationAtSplit += bins[binIndex].count;
+        split = binIndex + 1;
+        if (populationAtSplit >= population / 2) {
+            break;
+        }
+    }
+    boxes[chosenBox].end = split;
+    boxes[boxCount] = (ColorBox){split, box.end};
+}
+
+/**
+ * Average original sample sums into each final palette colour.
+ * @param bins Occupied colour buckets partitioned by median cut.
+ * @param boxes Final bin ranges.
+ * @param boxCount Number of palette colours.
+ * @param palette Receives averaged RGBA entries.
+ * @author kai
+ */
+static void averagePalette(const ColorBin *bins, const ColorBox *boxes, unsigned boxCount,
+                           unsigned char palette[MAX_PALETTE_COLORS][COLOR_CHANNELS]) {
+    unsigned boxIndex;
+    for (boxIndex = 0; boxIndex < boxCount; boxIndex++) {
+        unsigned long population = 0;
+        unsigned long sums[COLOR_CHANNELS] = {0};
+        unsigned binIndex;
+        unsigned channelIndex;
+        for (binIndex = boxes[boxIndex].begin; binIndex < boxes[boxIndex].end; binIndex++) {
+            population += bins[binIndex].count;
+            for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
+                sums[channelIndex] += bins[binIndex].sum[channelIndex];
+            }
+        }
+        for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
+            palette[boxIndex][channelIndex] =
+                (unsigned char)((sums[channelIndex] + population / 2) / population);
+        }
+    }
+}
+
+/**
+ * Assign every occupied histogram bucket to its nearest averaged palette entry.
+ * @param histogram Colour histogram receiving palette labels.
+ * @param palette Averaged RGBA entries.
+ * @param paletteCount Number of populated entries.
+ * @author kai
+ */
+static void assignPaletteLabels(ColorBin *histogram,
+                                unsigned char palette[MAX_PALETTE_COLORS][COLOR_CHANNELS],
+                                unsigned paletteCount) {
+    unsigned bucketIndex;
+    for (bucketIndex = 0; bucketIndex < COLOR_KEY_COUNT; bucketIndex++) {
+        unsigned colorIndex;
+        unsigned long bestDistance = (unsigned long)-1;
+        if (!histogram[bucketIndex].count) {
+            continue;
+        }
+        for (colorIndex = 0; colorIndex < paletteCount; colorIndex++) {
+            unsigned long distance = 0;
+            unsigned channelIndex;
+            for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
+                long difference = (long)histogram[bucketIndex].value[channelIndex] -
+                                  palette[colorIndex][channelIndex];
+                unsigned weight = channelIndex == ALPHA_CHANNEL ? ALPHA_DISTANCE_WEIGHT : 1;
+                distance += (unsigned long)(difference * difference) * weight;
+            }
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                histogram[bucketIndex].label = (unsigned char)colorIndex;
+            }
+        }
+    }
+}
+
+/**
+ * Build a population-weighted palette and assign each pixel to its nearest entry.
+ * @param image Decoded RGBA image to quantize.
  * @param requested Maximum number of palette colours.
  * @param palette Receives palette RGBA entries.
  * @param used Receives the number of populated palette entries.
@@ -76,139 +337,55 @@ static int compareBins(const void *a, const void *b) {
  * @return Nonzero when palette labels are populated; zero on allocation failure.
  * @author kai
  */
-static int paletteImage(const RcImage *im, unsigned requested, unsigned char palette[256][4],
-                        unsigned *used, unsigned char **labels) {
-    ColorBin *hist = calloc(65536, sizeof(*hist)), *bins = NULL;
-    ColorBox boxes[256];
-    unsigned binsCount = 0, count = 1, i, k;
-    size_t px, total = (size_t)im->width * im->height;
-    int ok = 0;
-
-    /* BUILD THE COLOUR HISTOGRAM*/
-    if (!hist)
+static int paletteImage(const RcImage *image, unsigned requested,
+                        unsigned char palette[MAX_PALETTE_COLORS][COLOR_CHANNELS], unsigned *used,
+                        unsigned char **labels) {
+    ColorBin *histogram = NULL;
+    ColorBin *bins = NULL;
+    ColorBox boxes[MAX_PALETTE_COLORS];
+    unsigned binCount = 0;
+    unsigned paletteCount = 1;
+    unsigned char *pixelLabels = NULL;
+    unsigned channel = 0;
+    unsigned chosenBox;
+    unsigned long population = 0;
+    size_t pixelIndex;
+    size_t pixelCount = (size_t)image->width * image->height;
+    int succeeded = 0;
+    *labels = NULL;
+    if (!collectColorBins(image, &histogram, &bins, &binCount)) {
         return 0;
-    for (px = 0; px < total; px++) {
-        const unsigned char *p = im->rgba + px * 4;
-        ColorBin *b = &hist[colorKey(p)];
-        b->count++;
-        for (k = 0; k < 4; k++)
-            b->sum[k] += p[3] ? p[k] : 0;
     }
-    for (i = 0; i < 65536; i++)
-        if (hist[i].count)
-            binsCount++;
-
-    /* COMPACT POPULATED BINS*/
-    /* Median cuts operate on occupied buckets rather than the complete colour key space.*/
-    bins = malloc(binsCount * sizeof(*bins));
-    *labels = malloc(total);
-    if (!bins || !*labels)
+    pixelLabels = malloc(pixelCount);
+    if (!pixelLabels) {
         goto done;
-    binsCount = 0;
-    for (i = 0; i < 65536; i++)
-        if (hist[i].count) {
-            for (k = 0; k < 4; k++)
-                hist[i].value[k] = (unsigned char)(hist[i].sum[k] / hist[i].count);
-            bins[binsCount++] = hist[i];
-        }
-    boxes[0] = (ColorBox){0, binsCount};
-
-    /* Split populated colour ranges rather than treating JPEG noise as equally important.*/
-    while (count < requested) {
-        unsigned chosen = 256, channel = 0;
-        unsigned long best = 0, populationAtSplit = 0;
-
-        /* CHOOSE THE SPLIT AXIS*/
-        /* Population weighting prevents sparse noise from dominating palette allocation.*/
-
-        for (i = 0; i < count; i++) {
-            unsigned lo[4] = {255, 255, 255, 255}, hi[4] = {0}, b;
-            unsigned long population = 0;
-            if (boxes[i].end - boxes[i].begin < 2)
-                continue;
-            for (b = boxes[i].begin; b < boxes[i].end; b++) {
-                population += bins[b].count;
-                for (k = 0; k < 4; k++) {
-                    if (bins[b].value[k] < lo[k])
-                        lo[k] = bins[b].value[k];
-                    if (bins[b].value[k] > hi[k])
-                        hi[k] = bins[b].value[k];
-                }
-            }
-            for (k = 0; k < 4; k++) {
-                unsigned long score = (hi[k] - lo[k]) * (unsigned long)sqrt((double)population);
-                if (score > best) {
-                    best = score;
-                    chosen = i;
-                    channel = k;
-                    populationAtSplit = population;
-                }
-            }
-        }
-        if (chosen == 256)
+    }
+    boxes[0] = (ColorBox){0, binCount};
+    /* Split populated ranges by the strongest population-weighted colour channel. */
+    while (paletteCount < requested) {
+        chosenBox = chooseColorBox(bins, boxes, paletteCount, &channel, &population);
+        if (chosenBox == MAX_PALETTE_COLORS) {
             break;
-        {
-            /* PARTITION AT THE WEIGHTED MEDIAN*/
-            ColorBox box = boxes[chosen];
-            unsigned split = box.begin + 1, b;
-            unsigned long sum = 0;
-            sortChannel = channel;
-            qsort(bins + box.begin, box.end - box.begin, sizeof(*bins), compareBins);
-            for (b = box.begin; b + 1 < box.end; b++) {
-                sum += bins[b].count;
-                split = b + 1;
-                if (sum >= populationAtSplit / 2)
-                    break;
-            }
-            boxes[chosen].end = split;
-            boxes[count++] = (ColorBox){split, box.end};
         }
+        splitColorBox(bins, boxes, paletteCount, chosenBox, channel, population);
+        paletteCount++;
     }
-    /* AVERAGE EACH FINAL COLOUR*/
-    /* Original sample sums avoid introducing the colour buckets' centre-point bias.*/
-    for (i = 0; i < count; i++) {
-        unsigned long population = 0, sums[4] = {0};
-        unsigned b;
-        for (b = boxes[i].begin; b < boxes[i].end; b++) {
-            population += bins[b].count;
-            for (k = 0; k < 4; k++)
-                sums[k] += bins[b].sum[k];
-        }
-        for (k = 0; k < 4; k++)
-            palette[i][k] = (unsigned char)((sums[k] + population / 2) / population);
+    averagePalette(bins, boxes, paletteCount, palette);
+    assignPaletteLabels(histogram, palette, paletteCount);
+    for (pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
+        pixelLabels[pixelIndex] =
+            histogram[colorKey(image->rgba + (pixelIndex * COLOR_CHANNELS))].label;
     }
-    /* ASSIGN PALETTE LABELS*/
-    /* Choose once per occupied bucket, then map pixels directly through the histogram.*/
-    for (i = 0; i < 65536; i++) {
-        unsigned color;
-        unsigned long best = (unsigned long)-1;
-        if (!hist[i].count)
-            continue;
-        for (color = 0; color < count; color++) {
-            unsigned long distance = 0;
-            for (k = 0; k < 4; k++) {
-                long d = (long)hist[i].value[k] - palette[color][k];
-                distance += (unsigned long)(d * d) * (k == 3 ? 2UL : 1UL);
-            }
-            if (distance < best) {
-                best = distance;
-                hist[i].label = (unsigned char)color;
-            }
-        }
-    }
-    for (px = 0; px < total; px++)
-        (*labels)[px] = hist[colorKey(im->rgba + px * 4)].label;
-    *used = count;
-    ok = 1;
+    *used = paletteCount;
+    *labels = pixelLabels;
+    succeeded = 1;
 done:
-    /* RELEASE PALETTE WORKSPACE*/
-    free(hist);
+    free(histogram);
     free(bins);
-    if (!ok) {
-        free(*labels);
-        *labels = NULL;
+    if (!succeeded) {
+        free(pixelLabels);
     }
-    return ok;
+    return succeeded;
 }
 
 /*//////////////////////////////////////////////////
@@ -228,11 +405,13 @@ static int pointAdd(Points *p, int x, int y) {
     if (p->count == p->capacity) {
         size_t cap = p->capacity ? p->capacity * 2 : 256;
         Point *q;
-        if (cap > RC_LIMIT / sizeof(Point))
+        if (cap > RC_LIMIT / sizeof(Point)) {
             return 0;
+        }
         q = realloc(p->p, cap * sizeof(*q));
-        if (!q)
+        if (!q) {
             return 0;
+        }
         p->p = q;
         p->capacity = cap;
     }
@@ -252,7 +431,7 @@ static int pointAdd(Points *p, int x, int y) {
 static int labelAt(const unsigned char *labels, unsigned w, unsigned h, int x, int y) {
     return x < 0 || y < 0 || (unsigned)x >= w || (unsigned)y >= h
                ? -1
-               : labels[(size_t)y * w + (unsigned)x];
+               : labels[((size_t)y * w) + (unsigned)x];
 }
 /**
  * Check whether a directed pixel edge borders the requested palette region.
@@ -269,11 +448,17 @@ static int labelAt(const unsigned char *labels, unsigned w, unsigned h, int x, i
  */
 static int edge(const unsigned char *labels, unsigned w, unsigned h, int x, int y, unsigned d,
                 int color, size_t *cell) {
-    static const int rightX[4] = {0, -1, -1, 0}, rightY[4] = {0, 0, -1, -1};
-    static const int leftX[4] = {0, 0, -1, -1}, leftY[4] = {-1, 0, 0, -1};
-    int rx = x + rightX[d], ry = y + rightY[d], lx = x + leftX[d], ly = y + leftY[d];
-    if (labelAt(labels, w, h, rx, ry) != color || labelAt(labels, w, h, lx, ly) == color)
+    static const int rightX[4] = {0, -1, -1, 0};
+    static const int rightY[4] = {0, 0, -1, -1};
+    static const int leftX[4] = {0, 0, -1, -1};
+    static const int leftY[4] = {-1, 0, 0, -1};
+    int rx = x + rightX[d];
+    int ry = y + rightY[d];
+    int lx = x + leftX[d];
+    int ly = y + leftY[d];
+    if (labelAt(labels, w, h, rx, ry) != color || labelAt(labels, w, h, lx, ly) == color) {
         return 0;
+    }
     *cell = (size_t)ry * w + (unsigned)rx;
     return 1;
 }
@@ -288,13 +473,18 @@ static int edge(const unsigned char *labels, unsigned w, unsigned h, int x, int 
  * @author kai
  */
 static double distanceSquared(Point p, Point a, Point b) {
-    double dx = b.x - a.x, dy = b.y - a.y, t = 0, ex, ey;
-    if (dx || dy)
+    double dx = b.x - a.x;
+    double dy = b.y - a.y;
+    double t = 0;
+    double ex;
+    double ey;
+    if (dx || dy) {
         t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+    }
     t = fmax(0, fmin(1, t));
     ex = p.x - a.x - t * dx;
     ey = p.y - a.y - t * dy;
-    return ex * ex + ey * ey;
+    return (ex * ex) + (ey * ey);
 }
 /**
  * Simplify a closed contour while retaining winding, shared colour anchors, and three vertices.
@@ -309,50 +499,66 @@ static double distanceSquared(Point p, Point a, Point b) {
 static int simplify(Points *p, double tolerance, const unsigned char *labels, unsigned w,
                     unsigned h) {
     unsigned char *keep;
-    size_t *stack, top = 0, n = p->count, i;
+    size_t *stack;
+    size_t top = 0;
+    size_t n = p->count;
+    size_t i;
     Point *scratch;
     int ok = 0;
 
     /* PREPARE CONTOUR SIMPLIFICATION*/
-    if (n < 5 || tolerance <= 0)
+    if (n < 5 || tolerance <= 0) {
         return 1;
+    }
     keep = calloc(n + 1, 1);
     stack = malloc((n + 1) * 2 * sizeof(*stack));
     scratch = malloc(n * sizeof(*scratch));
-    if (!keep || !stack || !scratch)
+    if (!keep || !stack || !scratch) {
         goto done;
+    }
     /* Shared boundaries must choose identical anchors in either direction. */
     {
         /* LOCK SHARED JUNCTIONS*/
         /* Three or more surrounding labels make this vertex a boundary that neither neighbour may*/
         /* move.*/
-        size_t anchor = 0, junction = n;
+        size_t anchor = 0;
+        size_t junction = n;
         for (i = 0; i < n; i++) {
-            int values[4], distinct = 0, q, j;
-            int x = p->p[i].x, y = p->p[i].y;
+            int values[4];
+            int distinct = 0;
+            int q;
+            int j;
+            int x = p->p[i].x;
+            int y = p->p[i].y;
             values[0] = labelAt(labels, w, h, x - 1, y - 1);
             values[1] = labelAt(labels, w, h, x, y - 1);
             values[2] = labelAt(labels, w, h, x - 1, y);
             values[3] = labelAt(labels, w, h, x, y);
             for (q = 0; q < 4; q++) {
-                for (j = 0; j < q; j++)
-                    if (values[j] == values[q])
+                for (j = 0; j < q; j++) {
+                    if (values[j] == values[q]) {
                         break;
-                if (j == q)
+                    }
+                }
+                if (j == q) {
                     distinct++;
+                }
             }
-            if (x < p->p[anchor].x || (x == p->p[anchor].x && y < p->p[anchor].y))
+            if (x < p->p[anchor].x || (x == p->p[anchor].x && y < p->p[anchor].y)) {
                 anchor = i;
+            }
             if (distinct >= 3 && (junction == n || x < p->p[junction].x ||
-                                  (x == p->p[junction].x && y < p->p[junction].y)))
+                                  (x == p->p[junction].x && y < p->p[junction].y))) {
                 junction = i;
+            }
             stack[i] = (size_t)(distinct >= 3);
         }
 
         /* ROTATE TO A SHARED ANCHOR*/
         /* Lexicographic anchors make forward and reverse traversals choose the same segments.*/
-        if (junction != n)
+        if (junction != n) {
             anchor = junction;
+        }
         for (i = 0; i < n; i++) {
             size_t original = (anchor + i) % n;
             scratch[i] = p->p[original];
@@ -363,23 +569,27 @@ static int simplify(Points *p, double tolerance, const unsigned char *labels, un
 
     /* SEED LOCKED SEGMENTS*/
     /* Retain the closing vertex and split work only between fixed junctions.*/
-    if (!pointAdd(p, p->p[0].x, p->p[0].y))
+    if (!pointAdd(p, p->p[0].x, p->p[0].y)) {
         goto done;
+    }
     keep[0] = keep[n] = 1;
     {
         size_t begin = 0;
-        for (i = 1; i <= n; i++)
+        for (i = 1; i <= n; i++) {
             if (keep[i]) {
                 stack[top++] = begin;
                 stack[top++] = i;
                 begin = i;
             }
+        }
     }
 
     /* SIMPLIFY BETWEEN ANCHORS*/
     /* The explicit stack avoids recursion on detailed image boundaries.*/
     while (top) {
-        size_t end = stack[--top], begin = stack[--top], chosen = 0;
+        size_t end = stack[--top];
+        size_t begin = stack[--top];
+        size_t chosen = 0;
         double best = tolerance * tolerance;
         for (i = begin + 1; i < end; i++) {
             double d = distanceSquared(p->p[i], p->p[begin], p->p[end]);
@@ -403,23 +613,28 @@ static int simplify(Points *p, double tolerance, const unsigned char *labels, un
     }
     {
         /* VALIDATE WINDING BEFORE COMMIT*/
-        /* Keep the original contour if simplification would collapse it or reverse its orientation.*/
+        /* Keep the original contour if simplification would collapse it or reverse its
+         * orientation.*/
         size_t count = 0;
-        double before = 0, after = 0;
+        double before = 0;
+        double after = 0;
         for (i = 0; i < n; i++) {
             before +=
                 (double)p->p[i].x * p->p[(i + 1) % n].y - (double)p->p[(i + 1) % n].x * p->p[i].y;
-            if (keep[i])
+            if (keep[i]) {
                 scratch[count++] = p->p[i];
+            }
         }
-        for (i = 0; i < count; i++)
+        for (i = 0; i < count; i++) {
             after += (double)scratch[i].x * scratch[(i + 1) % count].y -
                      (double)scratch[(i + 1) % count].x * scratch[i].y;
+        }
         if (count >= 3 && before * after > 0) {
             memcpy(p->p, scratch, count * sizeof(*scratch));
             p->count = count;
-        } else
+        } else {
             p->count = n;
+        }
     }
     ok = 1;
 done:
@@ -446,29 +661,35 @@ static int emitContour(RcBuffer *svg, RcBuffer *pdf, const Points *p) {
     int length;
 
     /* OPEN THE CLOSED PATH*/
-    if (p->count < 3)
+    if (p->count < 3) {
         return 1;
+    }
     length = snprintf(text, sizeof(text), "M%d %d", p->p[0].x, p->p[0].y);
-    if (!rcAppend(svg, text, (size_t)length))
+    if (!rcAppend(svg, text, (size_t)length)) {
         return 0;
+    }
     length = snprintf(text, sizeof(text), "%d %d m\n", p->p[0].x, p->p[0].y);
-    if (!rcAppend(pdf, text, (size_t)length))
+    if (!rcAppend(pdf, text, (size_t)length)) {
         return 0;
+    }
 
     /* SERIALIZE SHARED VERTICES*/
     /* SVG uses compact relative moves; PDF receives equivalent absolute line endpoints.*/
     for (i = 1; i < p->count; i++) {
-        int dx = p->p[i].x - p->p[i - 1].x, dy = p->p[i].y - p->p[i - 1].y;
+        int dx = p->p[i].x - p->p[i - 1].x;
+        int dy = p->p[i].y - p->p[i - 1].y;
         length = snprintf(text, sizeof(text),
                           dx == 0   ? "v%d"
                           : dy == 0 ? "h%d"
                                     : "l%d %d",
                           dx == 0 ? dy : dx, dy);
-        if (!rcAppend(svg, text, (size_t)length))
+        if (!rcAppend(svg, text, (size_t)length)) {
             return 0;
+        }
         length = snprintf(text, sizeof(text), "%d %d l\n", p->p[i].x, p->p[i].y);
-        if (!rcAppend(pdf, text, (size_t)length))
+        if (!rcAppend(pdf, text, (size_t)length)) {
             return 0;
+        }
     }
     return rcAppend(svg, "z", 1) && rcAppend(pdf, "h\n", 2);
 }
@@ -501,10 +722,15 @@ void rcFreeVector(RcVector *v) {
  * @author kai
  */
 int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *out) {
-    unsigned char palette[256][4], *labels = NULL, *visited = NULL;
+    unsigned char palette[256][4];
+    unsigned char *labels = NULL;
+    unsigned char *visited = NULL;
     Paths *paths = NULL;
     Points points = {0};
-    unsigned count = 0, x, y, k;
+    unsigned count = 0;
+    unsigned x;
+    unsigned y;
+    unsigned k;
     size_t total = (size_t)im->width * im->height;
     int ok = 0;
     char text[256];
@@ -513,44 +739,56 @@ int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *
     /* PREPARE REGION WORKSPACE*/
     /* A visited bit belongs to one directed side of one pixel, not to the whole region.*/
     memset(out, 0, sizeof(*out));
-    if (colors < 2 || colors > 256 || !paletteImage(im, colors, palette, &count, &labels))
+    if (colors < 2 || colors > 256 || !paletteImage(im, colors, palette, &count, &labels)) {
         return 0;
+    }
     visited = calloc(total, 1);
     paths = calloc(count, sizeof(*paths));
-    if (!visited || !paths)
+    if (!visited || !paths) {
         goto done;
+    }
 
     /* DISCOVER REGION BOUNDARIES*/
     /* Walk each boundary with its region on the right; transparent labels are skipped.*/
-    for (y = 0; y < im->height; y++)
+    for (y = 0; y < im->height; y++) {
         for (x = 0; x < im->width; x++) {
-            unsigned color = labels[(size_t)y * im->width + x], d;
+            unsigned color = labels[(size_t)y * im->width + x];
+            unsigned d;
 
             /* Transparent regions remain empty rather than being flattened onto a background.*/
-            if (!palette[color][3])
+            if (!palette[color][3]) {
                 continue;
+            }
             for (d = 0; d < 4; d++) {
-                int sx = (int)x + (d == 1 || d == 2), sy = (int)y + (d >= 2), cx = sx, cy = sy;
+                int sx = (int)x + (d == 1 || d == 2);
+                int sy = (int)y + (d >= 2);
+                int cx = sx;
+                int cy = sy;
                 unsigned direction = d;
-                size_t cell, steps = 0;
+                size_t cell;
+                size_t steps = 0;
                 points.count = 0;
 
                 /* START AN UNVISITED CONTOUR*/
                 /* Start only on an unvisited side separating different labels.*/
                 if (!edge(labels, im->width, im->height, sx, sy, d, (int)color, &cell) ||
-                    (visited[cell] & (1U << d)))
+                    (visited[cell] & (1U << d))) {
                     continue;
-                if (!pointAdd(&points, sx, sy))
+                }
+                if (!pointAdd(&points, sx, sy)) {
                     goto done;
+                }
                 do {
                     static const unsigned turns[4] = {1, 0, 3, 2};
-                    unsigned next, i;
+                    unsigned next;
+                    unsigned i;
                     size_t nextCell;
 
                     /* ADVANCE THE BOUNDARY*/
                     /* Reject a repeated directed edge before moving to its endpoint.*/
-                    if (visited[cell] & (1U << direction))
+                    if (visited[cell] & (1U << direction)) {
                         goto done;
+                    }
 
                     /* Direction order is east, south, west, north.*/
                     visited[cell] |= (unsigned char)(1U << direction);
@@ -562,19 +800,22 @@ int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *
                     for (i = 0; i < 4; i++) {
                         next = (direction + turns[i]) % 4;
                         if (edge(labels, im->width, im->height, cx, cy, next, (int)color,
-                                 &nextCell))
+                                 &nextCell)) {
                             break;
+                        }
                     }
 
                     /* BOUND THE WALK*/
                     /* A contour cannot visit more than four sides per pixel.*/
-                    if (i == 4 || ++steps > total * 4)
+                    if (i == 4 || ++steps > total * 4) {
                         goto done;
+                    }
 
                     /* RECORD CORNERS*/
                     /* Record turns only; straight runs need no intermediate vertices.*/
-                    if (next != direction && !pointAdd(&points, cx, cy))
+                    if (next != direction && !pointAdd(&points, cx, cy)) {
                         goto done;
+                    }
                     direction = next;
                     cell = nextCell;
                 } while (cx != sx || cy != sy || direction != d);
@@ -582,13 +823,16 @@ int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *
                 /* CLOSE AND STORE THE CONTOUR*/
                 /* Drop the duplicate endpoint; share simplified vertices across formats.*/
                 if (points.count > 1 && points.p[points.count - 1].x == points.p[0].x &&
-                    points.p[points.count - 1].y == points.p[0].y)
+                    points.p[points.count - 1].y == points.p[0].y) {
                     points.count--;
+                }
                 if (!simplify(&points, tolerance, labels, im->width, im->height) ||
-                    !emitContour(&paths[color].svg, &paths[color].pdf, &points))
+                    !emitContour(&paths[color].svg, &paths[color].pdf, &points)) {
                     goto done;
+                }
             }
         }
+    }
 
     /* BEGIN VECTOR DOCUMENTS*/
     /* SVG keeps pixel coordinates; the PDF transform maps the same paths into unit image space.*/
@@ -596,17 +840,21 @@ int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *
                  "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%u\" height=\"%u\" viewBox=\"0 "
                  "0 %u %u\">\n",
                  im->width, im->height, im->width, im->height);
-    if (!rcAppend(&out->svg, text, (size_t)n))
+    if (!rcAppend(&out->svg, text, (size_t)n)) {
         goto done;
+    }
     n = snprintf(text, sizeof(text), "q\n%.12g 0 0 %.12g 0 1 cm\n", 1.0 / im->width,
                  -1.0 / im->height);
-    if (!rcAppend(&out->pdf, text, (size_t)n) || !rcAppend(&out->resources, "/ExtGState <<\n", 14))
+    if (!rcAppend(&out->pdf, text, (size_t)n) ||
+        !rcAppend(&out->resources, "/ExtGState <<\n", 14)) {
         goto done;
+    }
 
     /* PAINT PALETTE REGIONS*/
     for (k = 0; k < count; k++) {
-        if (!paths[k].svg.size)
+        if (!paths[k].svg.size) {
             continue;
+        }
 
         /* SVG COLOUR AND GEOMETRY*/
         /* Even-odd filling preserves holes independently of winding.*/
@@ -616,8 +864,9 @@ int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *
             palette[k][0], palette[k][1], palette[k][2], palette[k][3] / 255.0);
         if (!rcAppend(&out->svg, text, (size_t)n) ||
             !rcAppend(&out->svg, paths[k].svg.data, paths[k].svg.size) ||
-            !rcAppend(&out->svg, "\"/>\n", 4))
+            !rcAppend(&out->svg, "\"/>\n", 4)) {
             goto done;
+        }
 
         /* PDF COLOUR AND OPACITY*/
         /* Each colour uses its own graphics state so transparency survives conversion.*/
@@ -625,33 +874,38 @@ int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *
                      palette[k][1] / 255.0, palette[k][2] / 255.0, k);
         if (!rcAppend(&out->pdf, text, (size_t)n) ||
             !rcAppend(&out->pdf, paths[k].pdf.data, paths[k].pdf.size) ||
-            !rcAppend(&out->pdf, "f*\n", 3))
+            !rcAppend(&out->pdf, "f*\n", 3)) {
             goto done;
+        }
         n = snprintf(text, sizeof(text), "/A%u << /Type /ExtGState /ca %.6f >>\n", k,
                      palette[k][3] / 255.0);
-        if (!rcAppend(&out->resources, text, (size_t)n))
+        if (!rcAppend(&out->resources, text, (size_t)n)) {
             goto done;
+        }
     }
 
     /* FINALISE OUTPUT DOCUMENTS*/
     if (!rcAppend(&out->resources, ">>\n", 3) || !rcAppend(&out->svg, "</svg>\n", 7) ||
-        !rcAppend(&out->pdf, "Q\n", 2))
+        !rcAppend(&out->pdf, "Q\n", 2)) {
         goto done;
+    }
     out->colors = count;
     ok = 1;
 done:
     /* RELEASE TEMPORARY CONTOURS*/
     /* Only complete output buffers remain owned by the caller on success.*/
-    if (paths)
+    if (paths) {
         for (k = 0; k < count; k++) {
             free(paths[k].svg.data);
             free(paths[k].pdf.data);
         }
+    }
     free(paths);
     free(labels);
     free(visited);
     free(points.p);
-    if (!ok)
+    if (!ok) {
         rcFreeVector(out);
+    }
     return ok;
 }

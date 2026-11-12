@@ -8,6 +8,10 @@ IMPORTS
 
 /* SHARED CONTRACT*/
 #include "codec.h"
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
 
 /*//////////////////////////////////////////////////
 CONFIG
@@ -45,150 +49,164 @@ DECODING
 /* ENTROPY*/
 /**
  * Read a big-endian 16-bit JPEG marker or segment value.
- * @param p Two JPEG bytes in big-endian order.
+ * @param bytes Two JPEG bytes in big-endian order.
  * @return The unsigned 16-bit value represented by the bytes.
  * @author kai
  */
-static unsigned j16(const unsigned char *p) { return ((unsigned)p[0] << 8) | p[1]; }
+static unsigned j16(const unsigned char *bytes) { return ((unsigned)bytes[0] << 8) | bytes[1]; }
 /**
  * Read entropy-coded JPEG bits and reject invalid byte stuffing.
- * @param j Decoder state holding the entropy stream and bit cache.
+ * @param decoder Decoder state holding the entropy stream and bit cache.
  * @param n Number of entropy bits to consume.
  * @return The next n bits, or zero while marking decoder state invalid on truncation.
  * @author kai
  */
-static unsigned jbits(Jpeg *j, unsigned n) {
-    unsigned v = 0;
+static unsigned jbits(Jpeg *decoder, unsigned n) {
+    unsigned value = 0;
     while (n--) {
-        if (!j->count) {
-            unsigned c;
-            if (j->at >= j->n) {
-                j->bad = 1;
+        if (!decoder->count) {
+            unsigned byte;
+            if (decoder->at >= decoder->n) {
+                decoder->bad = 1;
                 return 0;
             }
-            c = j->p[j->at++];
-            if (c == 255) {
-                if (j->at >= j->n || j->p[j->at++] != 0) {
-                    j->bad = 1;
+            byte = decoder->p[decoder->at++];
+            if (byte == 255) {
+                if (decoder->at >= decoder->n || decoder->p[decoder->at++] != 0) {
+                    decoder->bad = 1;
                     return 0;
                 }
             }
-            j->bits = c;
-            j->count = 8;
+            decoder->bits = byte;
+            decoder->count = 8;
         }
-        v = (v << 1) | ((j->bits >> (--j->count)) & 1);
+        value = (value << 1) | ((decoder->bits >> (--decoder->count)) & 1);
     }
-    return v;
+    return value;
 }
 /**
  * Decode one symbol from a JPEG canonical Huffman table.
- * @param j JPEG decoder state used to read the code bits.
- * @param h Canonical JPEG table for this symbol class.
+ * @param decoder JPEG decoder state used to read the code bits.
+ * @param table Canonical JPEG table for this symbol class.
  * @return Decoded symbol; an invalid code marks the decoder state bad.
  * @author kai
  */
-static int jhuff(Jpeg *j, const JHuff *h) {
-    unsigned code = 0, first = 0, index = 0, n;
+static int jhuff(Jpeg *decoder, const JHuff *table) {
+    unsigned code = 0;
+    unsigned first = 0;
+    unsigned index = 0;
+    unsigned codeLength;
     /* An unregistered table has zero counts and cannot match any code in this bounded walk.*/
-    for (n = 1; n <= 16; n++) {
-        code = (code << 1) | jbits(j, 1);
-        if (j->bad)
+    for (codeLength = 1; codeLength <= 16; codeLength++) {
+        code = (code << 1) | jbits(decoder, 1);
+        if (decoder->bad) {
             return 0;
-        if (code >= first && code - first < h->count[n])
-            return (int)h->symbol[index + code - first];
-        index += h->count[n];
-        first = (first + h->count[n]) << 1;
+        }
+        if (code >= first && code - first < table->count[codeLength]) {
+            return (int)table->symbol[index + code - first];
+        }
+        index += table->count[codeLength];
+        first = (first + table->count[codeLength]) << 1;
     }
-    j->bad = 1;
+    decoder->bad = 1;
     return 0;
 }
 /**
  * Read and sign-extend a JPEG magnitude value.
- * @param j Decoder state supplying the magnitude bits.
+ * @param decoder Decoder state supplying the magnitude bits.
  * @param n Magnitude bit count from the Huffman symbol.
  * @return The JPEG sign-extended magnitude, or zero when the count is unsupported.
  * @author kai
  */
-static int jreceive(Jpeg *j, unsigned n) {
-    unsigned v;
+static int jreceive(Jpeg *decoder, unsigned n) {
+    unsigned bits;
     if (n > 16) {
-        j->bad = 1;
+        decoder->bad = 1;
         return 0;
     }
-    v = jbits(j, n);
-    return n && v < (1U << (n - 1)) ? (int)v - (int)((1U << n) - 1) : (int)v;
+    bits = jbits(decoder, n);
+    return n && bits < (1U << (n - 1)) ? (int)bits - (int)((1U << n) - 1) : (int)bits;
 }
 /**
  * Read the next JPEG marker, skipping marker fill bytes.
- * @param j Decoder state positioned at the next marker prefix.
+ * @param decoder Decoder state positioned at the next marker prefix.
  * @return Marker byte, or -1 for a missing or truncated marker.
  * @author kai
  */
-static int nextMarker(Jpeg *j) {
-    unsigned c;
-    if (j->at >= j->n || j->p[j->at++] != 255)
+static int nextMarker(Jpeg *decoder) {
+    unsigned marker;
+    if (decoder->at >= decoder->n || decoder->p[decoder->at++] != 255) {
         return -1;
+    }
     do {
-        if (j->at >= j->n)
+        if (decoder->at >= decoder->n) {
             return -1;
-        c = j->p[j->at++];
-    } while (c == 255);
-    return (int)c;
+        }
+        marker = decoder->p[decoder->at++];
+    } while (marker == 255);
+    return (int)marker;
 }
 
 /* METADATA*/
 /**
  * Read a TIFF 16-bit value in the byte order declared by EXIF.
- * @param p Two TIFF bytes to interpret.
- * @param le Nonzero selects little-endian byte order.
+ * @param bytes Two TIFF bytes to interpret.
+ * @param littleEndian Nonzero selects little-endian byte order.
  * @return The unsigned 16-bit TIFF value.
  * @author kai
  */
-static unsigned ex16(const unsigned char *p, int le) {
-    return le ? ((unsigned)p[1] << 8) | p[0] : j16(p);
+static unsigned ex16(const unsigned char *bytes, int littleEndian) {
+    return littleEndian ? ((unsigned)bytes[1] << 8) | bytes[0] : j16(bytes);
 }
 /**
  * Read a TIFF 32-bit value in the byte order declared by EXIF.
- * @param p Four TIFF bytes to interpret.
- * @param le Nonzero selects little-endian byte order.
+ * @param bytes Four TIFF bytes to interpret.
+ * @param littleEndian Nonzero selects little-endian byte order.
  * @return The unsigned 32-bit TIFF value.
  * @author kai
  */
-static unsigned long ex32(const unsigned char *p, int le) {
-    return le ? (unsigned long)ex16(p, 1) | ((unsigned long)ex16(p + 2, 1) << 16)
-              : ((unsigned long)ex16(p, 0) << 16) | ex16(p + 2, 0);
+static unsigned long ex32(const unsigned char *bytes, int littleEndian) {
+    return littleEndian ? (unsigned long)ex16(bytes, 1) | ((unsigned long)ex16(bytes + 2, 1) << 16)
+                        : ((unsigned long)ex16(bytes, 0) << 16) | ex16(bytes + 2, 0);
 }
 /**
  * Read a valid EXIF orientation tag; default to normal orientation when absent or malformed.
- * @param p APP1 payload beginning with an EXIF header.
+ * @param payload APP1 payload beginning with an EXIF header.
  * @param n Available payload length, used to bound TIFF offsets.
  * @return EXIF orientation from one through eight, defaulting to one when absent or invalid.
  * @author kai
  */
-static unsigned exifOrientation(const unsigned char *p, size_t n) {
+static unsigned exifOrientation(const unsigned char *payload, size_t n) {
     unsigned long off;
-    unsigned count, i;
-    int le;
-    if (n < 14 || memcmp(p, "Exif\0\0", 6))
+    unsigned count;
+    unsigned entryIndex;
+    int littleEndian;
+    if (n < 14 || memcmp(payload, "Exif\0\0", 6) != 0) {
         return 1;
-    p += 6;
+    }
+    payload += 6;
     n -= 6;
-    le = p[0] == 'I' && p[1] == 'I';
-    if (!le && !(p[0] == 'M' && p[1] == 'M'))
+    littleEndian = payload[0] == 'I' && payload[1] == 'I';
+    if (!littleEndian && !(payload[0] == 'M' && payload[1] == 'M')) {
         return 1;
-    if (ex16(p + 2, le) != 42)
+    }
+    if (ex16(payload + 2, littleEndian) != 42) {
         return 1;
-    off = ex32(p + 4, le);
-    if (off > n - 2)
+    }
+    off = ex32(payload + 4, littleEndian);
+    if (off > n - 2) {
         return 1;
-    count = ex16(p + off, le);
-    if (count > (n - off - 2) / 12)
+    }
+    count = ex16(payload + off, littleEndian);
+    if (count > (n - off - 2) / 12) {
         return 1;
-    for (i = 0; i < count; i++) {
-        const unsigned char *tag = p + off + 2 + i * 12;
-        if (ex16(tag, le) == 274 && ex16(tag + 2, le) == 3 && ex32(tag + 4, le) == 1) {
-            unsigned v = ex16(tag + 8, le);
-            return v >= 1 && v <= 8 ? v : 1;
+    }
+    for (entryIndex = 0; entryIndex < count; entryIndex++) {
+        const unsigned char *tag = payload + off + 2 + (entryIndex * 12);
+        if (ex16(tag, littleEndian) == 274 && ex16(tag + 2, littleEndian) == 3 &&
+            ex32(tag + 4, littleEndian) == 1) {
+            unsigned orientation = ex16(tag + 8, littleEndian);
+            return orientation >= 1 && orientation <= 8 ? orientation : 1;
         }
     }
     return 1;
@@ -197,314 +215,396 @@ static unsigned exifOrientation(const unsigned char *p, size_t n) {
 /* COEFFICIENTS*/
 /**
  * Parse JPEG frame dimensions, sampling factors, and quantization table references.
- * @param j JPEG state receiving frame metadata.
- * @param p Frame segment payload.
+ * @param decoder JPEG state receiving frame metadata.
+ * @param payload Frame segment payload.
  * @param n Payload length from the marker.
  * @return Nonzero when frame geometry and bounded coefficient planes are valid.
  * @author kai
  */
-static int frame(Jpeg *j, const unsigned char *p, size_t n) {
-    unsigned i;
+static int frame(Jpeg *decoder, const unsigned char *payload, size_t n) {
+    unsigned componentIndex;
 
     /* VALIDATE FRAME GEOMETRY*/
-    if (n < 6 || p[0] != 8 || j->nc)
+    if (n < 6 || payload[0] != 8 || decoder->nc) {
         return 0;
-    j->h = j16(p + 1);
-    j->w = j16(p + 3);
-    j->nc = p[5];
-    if (!j->w || !j->h || (size_t)j->w > RC_PIXELS / j->h || (j->nc != 1 && j->nc != 3) ||
-        n != 6 + j->nc * 3)
+    }
+    decoder->h = j16(payload + 1);
+    decoder->w = j16(payload + 3);
+    decoder->nc = payload[5];
+    if (!decoder->w || !decoder->h || (size_t)decoder->w > RC_PIXELS / decoder->h ||
+        (decoder->nc != 1 && decoder->nc != 3) || n != 6 + decoder->nc * 3) {
         return 0;
+    }
 
     /* REGISTER COMPONENT SAMPLING*/
     /* Sampling factors determine the MCU grid and each padded coefficient plane.*/
-    for (i = 0; i < j->nc; i++) {
-        JComp *c = &j->c[i];
-        unsigned k;
-        c->id = p[6 + i * 3];
-        c->h = p[7 + i * 3] >> 4;
-        c->v = p[7 + i * 3] & 15;
-        c->q = p[8 + i * 3];
-        if (!c->h || !c->v || c->h > 4 || c->v > 4 || c->q > 3)
+    for (componentIndex = 0; componentIndex < decoder->nc; componentIndex++) {
+        JComp *component = &decoder->c[componentIndex];
+        unsigned priorComponentIndex;
+        component->id = payload[6 + (componentIndex * 3)];
+        component->h = payload[7 + (componentIndex * 3)] >> 4;
+        component->v = payload[7 + (componentIndex * 3)] & 15;
+        component->q = payload[8 + (componentIndex * 3)];
+        if (!component->h || !component->v || component->h > 4 || component->v > 4 ||
+            component->q > 3) {
             return 0;
-        for (k = 0; k < i; k++)
-            if (j->c[k].id == c->id)
+        }
+        for (priorComponentIndex = 0; priorComponentIndex < componentIndex; priorComponentIndex++) {
+            if (decoder->c[priorComponentIndex].id == component->id) {
                 return 0;
-        if (c->h > j->mh)
-            j->mh = c->h;
-        if (c->v > j->mv)
-            j->mv = c->v;
-        for (k = 0; k < 64; k++)
-            c->last[k] = -1;
+            }
+        }
+        if (component->h > decoder->mh) {
+            decoder->mh = component->h;
+        }
+        if (component->v > decoder->mv) {
+            decoder->mv = component->v;
+        }
+        for (priorComponentIndex = 0; priorComponentIndex < 64; priorComponentIndex++) {
+            component->last[priorComponentIndex] = -1;
+        }
     }
-    j->mx = (j->w + 8 * j->mh - 1) / (8 * j->mh);
-    j->my = (j->h + 8 * j->mv - 1) / (8 * j->mv);
+    decoder->mx = (decoder->w + 8 * decoder->mh - 1) / (8 * decoder->mh);
+    decoder->my = (decoder->h + 8 * decoder->mv - 1) / (8 * decoder->mv);
     {
         /* ALLOCATE BOUNDED COEFFICIENT PLANES*/
         /* Track the combined allocation so component padding cannot bypass the memory limit.*/
         size_t total = 0;
         unsigned blocks = 0;
-        for (i = 0; i < j->nc; i++) {
-            JComp *c = &j->c[i];
+        for (componentIndex = 0; componentIndex < decoder->nc; componentIndex++) {
+            JComp *component = &decoder->c[componentIndex];
             size_t count;
-            c->bx = j->mx * c->h;
-            c->by = j->my * c->v;
-            c->actualX = (j->w * c->h + 8 * j->mh - 1) / (8 * j->mh);
-            c->actualY = (j->h * c->v + 8 * j->mv - 1) / (8 * j->mv);
-            count = (size_t)c->bx * c->by * 64;
-            if (count > RC_LIMIT / sizeof(int) || total > RC_LIMIT - count * sizeof(int))
+            component->bx = decoder->mx * component->h;
+            component->by = decoder->my * component->v;
+            component->actualX =
+                (decoder->w * component->h + 8 * decoder->mh - 1) / (8 * decoder->mh);
+            component->actualY =
+                (decoder->h * component->v + 8 * decoder->mv - 1) / (8 * decoder->mv);
+            count = (size_t)component->bx * component->by * 64;
+            if (count > RC_LIMIT / sizeof(int) || total > RC_LIMIT - count * sizeof(int)) {
                 return 0;
+            }
             total += count * sizeof(int);
-            blocks += c->h * c->v;
-            c->coef = calloc(count, sizeof(int));
-            if (!c->coef)
+            blocks += component->h * component->v;
+            component->coef = calloc(count, sizeof(int));
+            if (!component->coef) {
                 return 0;
+            }
         }
-        if (blocks > 10)
+        if (blocks > 10) {
             return 0;
+        }
     }
     return 1;
 }
 /**
  * Apply one progressive AC refinement bit to an already nonzero coefficient.
- * @param j Progressive JPEG decoder state.
- * @param c Component whose coefficient block is being refined.
+ * @param decoder Progressive JPEG decoder state.
+ * @param coefficient Component whose coefficient block is being refined.
  * @param bit Refinement bit to apply at the current spectral position.
  * @return Nonzero when the refinement bits are valid.
  * @author kai
  */
-static int refineNonzero(Jpeg *j, int *c, unsigned bit) {
-    if (jbits(j, 1) && ((unsigned)abs(*c) & bit) == 0)
-        *c += *c > 0 ? (int)bit : -(int)bit;
-    return !j->bad;
+static int refineNonzero(Jpeg *decoder, int *coefficient, unsigned bit) {
+    if (jbits(decoder, 1) && ((unsigned)abs(*coefficient) & bit) == 0) {
+        *coefficient += *coefficient > 0 ? (int)bit : -(int)bit;
+    }
+    return !decoder->bad;
 }
 /**
  * Decode one JPEG block for sequential or progressive scans.
- * @param j Decoder state for the current scan.
- * @param c Component and predictor state for this block.
+ * @param decoder Decoder state for the current scan.
+ * @param component Component and predictor state for this block.
  * @param block Receives the 64 quantized coefficients.
- * @param dc DC Huffman table index.
- * @param ac AC Huffman table index.
- * @param ss First spectral coefficient in this scan.
- * @param se Last spectral coefficient in this scan.
- * @param ah Previous approximation bit plane.
- * @param al Current approximation bit plane.
+ * @param dcTable DC Huffman table index.
+ * @param acTable AC Huffman table index.
+ * @param spectralStart First spectral coefficient in this scan.
+ * @param spectralEnd Last spectral coefficient in this scan.
+ * @param previousApproximation Previous approximation bit plane.
+ * @param currentApproximation Current approximation bit plane.
  * @param eob Remaining end-of-band run for progressive AC data.
  * @return Nonzero when the block is decoded without invalid coefficients or truncated bits.
  * @author kai
  */
-static int decodeBlock(Jpeg *j, JComp *c, int *block, unsigned dc, unsigned ac, unsigned ss,
-                       unsigned se, unsigned ah, unsigned al, unsigned *eob) {
-    unsigned k = ss, bit = 1U << al;
+static int decodeBlock(Jpeg *decoder, JComp *component, int *block, unsigned dcTable,
+                       unsigned acTable, unsigned spectralStart, unsigned spectralEnd,
+                       unsigned previousApproximation, unsigned currentApproximation,
+                       unsigned *eob) {
+    unsigned spectralIndex = spectralStart;
+    unsigned bit = 1U << currentApproximation;
 
     /* DECODE OR REFINE THE DC VALUE*/
     /* DC coefficients are differences from the previous block in the same component.*/
-    if (!ss) {
-        if (!ah) {
-            int s = jhuff(j, &j->tables[0][dc]);
+    if (!spectralStart) {
+        if (!previousApproximation) {
+            int category = jhuff(decoder, &decoder->tables[0][dcTable]);
             int delta;
-            if (s < 0 || s > 11)
+            if (category < 0 || category > 11) {
                 return 0;
-            delta = jreceive(j, (unsigned)s);
-            if (c->dc > 1048576 || c->dc < -1048576)
+            }
+            delta = jreceive(decoder, (unsigned)category);
+            if (component->dc > 1048576 || component->dc < -1048576) {
                 return 0;
-            c->dc += delta;
-            if (c->dc > (int)(1048576U / bit) || c->dc < -(int)(1048576U / bit))
+            }
+            component->dc += delta;
+            if (component->dc > (int)(1048576U / bit) || component->dc < -(int)(1048576U / bit)) {
                 return 0;
-            block[0] = c->dc * (int)bit;
-        } else if (jbits(j, 1))
+            }
+            block[0] = component->dc * (int)bit;
+        } else if (jbits(decoder, 1)) {
             block[0] |= (int)bit;
-        k = 1;
-        if (!se)
-            return !j->bad;
+        }
+        spectralIndex = 1;
+        if (!spectralEnd) {
+            return !decoder->bad;
+        }
     }
 
     /* DECODE INITIAL AC COEFFICIENTS*/
     /* An EOB run can skip the remaining spectral band across several blocks.*/
-    if (!ah) {
+    if (!previousApproximation) {
         if (*eob) {
             (*eob)--;
             return 1;
         }
-        while (k <= se && !j->bad) {
-            int symbol = jhuff(j, &j->tables[1][ac]);
-            unsigned run = (unsigned)symbol >> 4, s = (unsigned)symbol & 15;
-            if (!s) {
+        while (spectralIndex <= spectralEnd && !decoder->bad) {
+            int symbol = jhuff(decoder, &decoder->tables[1][acTable]);
+            unsigned run = (unsigned)symbol >> 4;
+            unsigned category = (unsigned)symbol & 15;
+            if (!category) {
                 if (run == 15) {
-                    k += 16;
-                    if (k > se + 1)
+                    spectralIndex += 16;
+                    if (spectralIndex > spectralEnd + 1) {
                         return 0;
+                    }
                     continue;
                 }
-                if (j->progressive) {
-                    *eob = (1U << run) + jbits(j, run) - 1;
+                if (decoder->progressive) {
+                    *eob = (1U << run) + jbits(decoder, run) - 1;
                 }
-                return !j->bad;
+                return !decoder->bad;
             }
-            if (s > 10 || k + run > se)
+            if (category > 10 || spectralIndex + run > spectralEnd) {
                 return 0;
-            k += run;
-            block[zig[k++]] = jreceive(j, s) * (int)bit;
+            }
+            spectralIndex += run;
+            block[zig[spectralIndex++]] = jreceive(decoder, category) * (int)bit;
         }
-        return !j->bad;
+        return !decoder->bad;
     }
 
     /* REFINE PROGRESSIVE AC COEFFICIENTS*/
     /* New coefficients consume a sign bit; existing nonzero values consume refinement bits.*/
     if (!*eob) {
-        while (k <= se && !j->bad) {
-            int symbol = jhuff(j, &j->tables[1][ac]), value = 0;
-            unsigned run = (unsigned)symbol >> 4, s = (unsigned)symbol & 15;
-            if (s) {
-                if (s != 1)
+        while (spectralIndex <= spectralEnd && !decoder->bad) {
+            int symbol = jhuff(decoder, &decoder->tables[1][acTable]);
+            int value = 0;
+            unsigned run = (unsigned)symbol >> 4;
+            unsigned category = (unsigned)symbol & 15;
+            if (category) {
+                if (category != 1) {
                     return 0;
-                value = jbits(j, 1) ? (int)bit : -(int)bit;
+                }
+                value = jbits(decoder, 1) ? (int)bit : -(int)bit;
             } else if (run != 15) {
-                *eob = (1U << run) + jbits(j, run);
+                *eob = (1U << run) + jbits(decoder, run);
                 break;
-            } else
+            } else {
                 run = 16;
+            }
 
             /* COUNT ONLY ZERO COEFFICIENTS*/
             /* Nonzero coefficients still consume refinement bits but do not reduce the zero run.*/
-            while (k <= se) {
-                int *v = &block[zig[k]];
-                if (*v) {
-                    if (!refineNonzero(j, v, bit))
+            while (spectralIndex <= spectralEnd) {
+                int *coefficient = &block[zig[spectralIndex]];
+                if (*coefficient) {
+                    if (!refineNonzero(decoder, coefficient, bit)) {
                         return 0;
+                    }
                 } else {
                     if (!run) {
                         if (value) {
-                            *v = value;
-                            k++;
+                            *coefficient = value;
+                            spectralIndex++;
                         }
                         break;
                     }
                     run--;
                 }
-                k++;
+                spectralIndex++;
             }
-            if (run || (value && k > se + 1))
+            if (run || (value && spectralIndex > spectralEnd + 1)) {
                 return 0;
+            }
         }
     }
 
     /* REFINE THE REMAINDER OF AN EOB BLOCK*/
     if (*eob) {
-        for (; k <= se; k++) {
-            int *v = &block[zig[k]];
-            if (*v && !refineNonzero(j, v, bit))
+        for (; spectralIndex <= spectralEnd; spectralIndex++) {
+            int *coefficient = &block[zig[spectralIndex]];
+            if (*coefficient && !refineNonzero(decoder, coefficient, bit)) {
                 return 0;
+            }
         }
         (*eob)--;
     }
-    return !j->bad;
+    return !decoder->bad;
 }
 /**
  * Decode a JPEG scan, including restart markers and progressive coefficient updates.
- * @param j JPEG state updated by the scan.
- * @param p Scan segment payload and entropy-coded bytes.
+ * @param decoder JPEG state updated by the scan.
+ * @param payload Scan segment payload and entropy-coded bytes.
  * @param n Bytes available in the scan segment.
  * @return Nonzero when all scan units and progressive runs decode successfully.
  * @author kai
  */
-static int scan(Jpeg *j, const unsigned char *p, size_t n) {
-    unsigned ns, i, indices[3], dcs[3], acs[3], ss, se, ah, al, mx, my, x, y, unit = 0, eob = 0,
-                                                                              rst = 0;
+static int scan(Jpeg *decoder, const unsigned char *payload, size_t n) {
+    unsigned scanComponentCount;
+    unsigned scanComponentIndex;
+    unsigned indices[3];
+    unsigned dcs[3];
+    unsigned acs[3];
+    unsigned spectralStart;
+    unsigned spectralEnd;
+    unsigned previousApproximation;
+    unsigned currentApproximation;
+    unsigned mcuColumns;
+    unsigned mcuRows;
+    unsigned mcuX;
+    unsigned mcuY;
+    unsigned unit = 0;
+    unsigned eob = 0;
+    unsigned rst = 0;
 
     /* VALIDATE SCAN COMPONENTS*/
-    if (!j->nc || n < 4)
+    if (!decoder->nc || n < 4) {
         return 0;
-    ns = p[0];
-    if (!ns || ns > j->nc || n != 1 + ns * 2 + 3)
+    }
+    scanComponentCount = payload[0];
+    if (!scanComponentCount || scanComponentCount > decoder->nc ||
+        n != 1 + scanComponentCount * 2 + 3) {
         return 0;
-    for (i = 0; i < ns; i++) {
-        unsigned c;
-        for (c = 0; c < j->nc; c++)
-            if (j->c[c].id == p[1 + i * 2])
+    }
+    for (scanComponentIndex = 0; scanComponentIndex < scanComponentCount; scanComponentIndex++) {
+        unsigned componentIndex;
+        for (componentIndex = 0; componentIndex < decoder->nc; componentIndex++) {
+            if (decoder->c[componentIndex].id == payload[1 + (scanComponentIndex * 2)]) {
                 break;
-        if (c == j->nc)
-            return 0;
-        indices[i] = c;
-        dcs[i] = p[2 + i * 2] >> 4;
-        acs[i] = p[2 + i * 2] & 15;
-        if (dcs[i] > 3 || acs[i] > 3)
-            return 0;
-        {
-            unsigned k;
-            for (k = 0; k < i; k++)
-                if (indices[k] == c)
-                    return 0;
+            }
         }
-        j->c[c].dc = 0;
+        if (componentIndex == decoder->nc) {
+            return 0;
+        }
+        indices[scanComponentIndex] = componentIndex;
+        dcs[scanComponentIndex] = payload[2 + (scanComponentIndex * 2)] >> 4;
+        acs[scanComponentIndex] = payload[2 + (scanComponentIndex * 2)] & 15;
+        if (dcs[scanComponentIndex] > 3 || acs[scanComponentIndex] > 3) {
+            return 0;
+        }
+        {
+            unsigned componentIndex;
+            for (componentIndex = 0; componentIndex < scanComponentIndex; componentIndex++) {
+                if (indices[componentIndex] == componentIndex) {
+                    return 0;
+                }
+            }
+        }
+        decoder->c[componentIndex].dc = 0;
     }
 
     /* VALIDATE SPECTRAL PROGRESSION*/
-    /* Refinement scans must follow the previous approximation level for every selected coefficient.*/
-    ss = p[1 + ns * 2];
-    se = p[2 + ns * 2];
-    ah = p[3 + ns * 2] >> 4;
-    al = p[3 + ns * 2] & 15;
-    if (ss > se || se > 63 || ah > 13 || al > 13)
+    /* Refinement scans must follow the previous approximation level for every selected
+     * coefficient.*/
+    spectralStart = payload[1 + (scanComponentCount * 2)];
+    spectralEnd = payload[2 + (scanComponentCount * 2)];
+    previousApproximation = payload[3 + (scanComponentCount * 2)] >> 4;
+    currentApproximation = payload[3 + (scanComponentCount * 2)] & 15;
+    if (spectralStart > spectralEnd || spectralEnd > 63 || previousApproximation > 13 ||
+        currentApproximation > 13) {
         return 0;
-    if (j->progressive) {
-        if ((!ss && se) || (ss && ns != 1) || (ah && ah != al + 1))
+    }
+    if (decoder->progressive) {
+        if ((!spectralStart && spectralEnd) || (spectralStart && scanComponentCount != 1) ||
+            (previousApproximation && previousApproximation != currentApproximation + 1)) {
             return 0;
-    } else if (ss || se != 63 || ah || al)
+        }
+    } else if (spectralStart || spectralEnd != 63 || previousApproximation ||
+               currentApproximation) {
         return 0;
-    for (i = 0; i < ns; i++) {
-        unsigned k;
-        JComp *c = &j->c[indices[i]];
-        for (k = ss; k <= se; k++) {
-            if ((!ah && c->last[k] != -1) || (ah && c->last[k] != (int)ah))
+    }
+    for (scanComponentIndex = 0; scanComponentIndex < scanComponentCount; scanComponentIndex++) {
+        unsigned componentIndex;
+        JComp *component = &decoder->c[indices[scanComponentIndex]];
+        for (componentIndex = spectralStart; componentIndex <= spectralEnd; componentIndex++) {
+            if ((!previousApproximation && component->last[componentIndex] != -1) ||
+                (previousApproximation &&
+                 component->last[componentIndex] != (int)previousApproximation)) {
                 return 0;
-            c->last[k] = (int)al;
+            }
+            component->last[componentIndex] = (int)currentApproximation;
         }
     }
 
     /* PREPARE THE MCU WALK*/
     /* Single-component scans use actual block bounds rather than interleaved padding.*/
-    mx = ns == 1 ? j->c[indices[0]].actualX : j->mx;
-    my = ns == 1 ? j->c[indices[0]].actualY : j->my;
-    j->bits = 0;
-    j->count = 0;
+    mcuColumns = scanComponentCount == 1 ? decoder->c[indices[0]].actualX : decoder->mx;
+    mcuRows = scanComponentCount == 1 ? decoder->c[indices[0]].actualY : decoder->my;
+    decoder->bits = 0;
+    decoder->count = 0;
 
     /* Restart intervals delimit both DC predictors and progressive EOB runs.*/
-    for (y = 0; y < my; y++)
-        for (x = 0; x < mx; x++) {
+    for (mcuY = 0; mcuY < mcuRows; mcuY++) {
+        for (mcuX = 0; mcuX < mcuColumns; mcuX++) {
             /* RESET AT RESTART BOUNDARIES*/
             /* Restart marker numbering cycles modulo eight and resets predictors and EOB state.*/
-            if (j->restart && unit == j->restart) {
+            if (decoder->restart && unit == decoder->restart) {
                 int marker;
-                j->bits = 0;
-                j->count = 0;
-                marker = nextMarker(j);
-                if (marker != 208 + (int)(rst & 7))
+                decoder->bits = 0;
+                decoder->count = 0;
+                marker = nextMarker(decoder);
+                if (marker != 208 + (int)(rst & 7)) {
                     return 0;
+                }
                 rst++;
                 unit = 0;
                 eob = 0;
-                for (i = 0; i < j->nc; i++)
-                    j->c[i].dc = 0;
+                for (scanComponentIndex = 0; scanComponentIndex < decoder->nc;
+                     scanComponentIndex++) {
+                    decoder->c[scanComponentIndex].dc = 0;
+                }
             }
 
             /* DECODE THE MCU COMPONENT BLOCKS*/
-            for (i = 0; i < ns; i++) {
-                JComp *c = &j->c[indices[i]];
-                unsigned yy, xx, h = ns == 1 ? 1 : c->h, v = ns == 1 ? 1 : c->v;
-                for (yy = 0; yy < v; yy++)
-                    for (xx = 0; xx < h; xx++) {
-                        unsigned bx = ns == 1 ? x : x * c->h + xx, by = ns == 1 ? y : y * c->v + yy;
-                        int *block = c->coef + ((size_t)by * c->bx + bx) * 64;
-                        if (!decodeBlock(j, c, block, dcs[i], acs[i], ss, se, ah, al, &eob))
+            for (scanComponentIndex = 0; scanComponentIndex < scanComponentCount;
+                 scanComponentIndex++) {
+                JComp *component = &decoder->c[indices[scanComponentIndex]];
+                unsigned blockY;
+                unsigned blockX;
+                unsigned horizontalSampling = scanComponentCount == 1 ? 1 : component->h;
+                unsigned verticalSampling = scanComponentCount == 1 ? 1 : component->v;
+                for (blockY = 0; blockY < verticalSampling; blockY++) {
+                    for (blockX = 0; blockX < horizontalSampling; blockX++) {
+                        unsigned blockX =
+                            scanComponentCount == 1 ? mcuX : (mcuX * component->h) + blockX;
+                        unsigned blockY =
+                            scanComponentCount == 1 ? mcuY : (mcuY * component->v) + blockY;
+                        int *block =
+                            component->coef + (((size_t)blockY * component->bx + blockX) * 64);
+                        if (!decodeBlock(decoder, component, block, dcs[scanComponentIndex],
+                                         acs[scanComponentIndex], spectralStart, spectralEnd,
+                                         previousApproximation, currentApproximation, &eob)) {
                             return 0;
+                        }
                     }
+                }
             }
             unit++;
         }
-    j->bits = 0;
-    j->count = 0;
-    return !j->bad && !eob;
+    }
+    decoder->bits = 0;
+    decoder->count = 0;
+    return !decoder->bad && !eob;
 }
 
 /*//////////////////////////////////////////////////
@@ -514,189 +614,247 @@ RECONSTRUCTION
 /* SAMPLE LIMITS*/
 /**
  * Round and clamp a component value to the 8-bit channel range.
- * @param v Floating-point channel value before 8-bit clamping.
+ * @param value Floating-point channel value before 8-bit clamping.
  * @return Rounded channel value clamped to the inclusive 0–255 range.
  * @author kai
  */
-static unsigned char clampByte(double v) {
-    if (v <= 0)
+static unsigned char clampByte(double value) {
+    if (value <= 0) {
         return 0;
-    if (v >= 255)
+    }
+    if (value >= 255) {
         return 255;
-    return (unsigned char)floor(v + 0.5);
+    }
+    return (unsigned char)floor(value + 0.5);
 }
 
 /* INVERSE TRANSFORM*/
 /**
  * Convert decoded JPEG component planes to straight-alpha RGBA8 pixels.
- * @param j Decoded component planes and sampling metadata.
- * @param im Receives the rendered RGBA8 image.
+ * @param decoder Decoded component planes and sampling metadata.
+ * @param image Receives the rendered RGBA8 image.
  * @return Nonzero when all component planes render into a complete image.
  * @author kai
  */
-static int render(Jpeg *j, RcImage *im) {
+static int render(Jpeg *decoder, RcImage *image) {
     double basis[8][8];
-    unsigned c, x, y, u, v;
-    int direct =
-        j->rgb || (j->nc == 3 && j->c[0].id == 'R' && j->c[1].id == 'G' && j->c[2].id == 'B');
+    unsigned componentIndex;
+    unsigned pixelX;
+    unsigned pixelY;
+    unsigned horizontalFrequency;
+    unsigned verticalFrequency;
+    int direct = decoder->rgb || (decoder->nc == 3 && decoder->c[0].id == 'R' &&
+                                  decoder->c[1].id == 'G' && decoder->c[2].id == 'B');
 
     /* BUILD THE INVERSE-TRANSFORM BASIS*/
-    for (x = 0; x < 8; x++)
-        for (u = 0; u < 8; u++)
-            basis[x][u] = (u ? 1.0 : 0.7071067811865475) *
-                          cos((2.0 * x + 1) * u * 3.14159265358979323846 / 16.0);
+    for (pixelX = 0; pixelX < 8; pixelX++) {
+        for (horizontalFrequency = 0; horizontalFrequency < 8; horizontalFrequency++) {
+            basis[pixelX][horizontalFrequency] =
+                (horizontalFrequency ? 1.0 : 0.7071067811865475) *
+                cos((2.0 * pixelX + 1) * horizontalFrequency * 3.14159265358979323846 / 16.0);
+        }
+    }
 
     /* Reconstruct separate component planes before centred chroma sampling.*/
-    for (c = 0; c < j->nc; c++) {
-        JComp *co = &j->c[c];
-        unsigned bx, by, stride = co->bx * 8;
+    for (componentIndex = 0; componentIndex < decoder->nc; componentIndex++) {
+        JComp *component = &decoder->c[componentIndex];
+        unsigned blockX;
+        unsigned blockY;
+        unsigned stride = component->bx * 8;
         /* DC progression and a nonzero first quantizer prove that both inputs were registered.*/
-        if (co->last[0] < 0 || !j->quant[co->q][0])
+        if (component->last[0] < 0 || !decoder->quant[component->q][0]) {
             return 0;
-        co->samples = malloc((size_t)co->bx * co->by * 64);
-        if (!co->samples)
+        }
+        component->samples = malloc((size_t)component->bx * component->by * 64);
+        if (!component->samples) {
             return 0;
+        }
 
         /* RECONSTRUCT COMPONENT BLOCKS*/
-        for (by = 0; by < co->by; by++)
-            for (bx = 0; bx < co->bx; bx++) {
-                int *coeff = co->coef + ((size_t)by * co->bx + bx) * 64;
+        for (blockY = 0; blockY < component->by; blockY++) {
+            for (blockX = 0; blockX < component->bx; blockX++) {
+                int *coeff = component->coef + (((size_t)blockY * component->bx + blockX) * 64);
                 double tmp[8][8];
-                int ac = 0;
-                for (u = 1; u < 64; u++)
-                    if (coeff[u]) {
-                        ac = 1;
+                int hasAcCoefficients = 0;
+                for (horizontalFrequency = 1; horizontalFrequency < 64; horizontalFrequency++) {
+                    if (coeff[horizontalFrequency]) {
+                        hasAcCoefficients = 1;
                         break;
                     }
+                }
 
                 /* HANDLE CONSTANT BLOCKS*/
-                /* A DC-only block has one value throughout, avoiding the two full transform passes.*/
-                if (!ac) {
+                /* A DC-only block has one value throughout, avoiding the two full transform
+                 * passes.*/
+                if (!hasAcCoefficients) {
                     unsigned char val =
-                        clampByte((double)coeff[0] * j->quant[co->q][0] / 8.0 + 128);
-                    for (y = 0; y < 8; y++)
-                        memset(co->samples + ((size_t)by * 8 + y) * stride + bx * 8, val, 8);
+                        clampByte(((double)coeff[0] * decoder->quant[component->q][0] / 8.0) + 128);
+                    for (pixelY = 0; pixelY < 8; pixelY++) {
+                        memset(component->samples + (((size_t)blockY * 8 + pixelY) * stride) +
+                                   (blockX * 8),
+                               val, 8);
+                    }
                     continue;
                 }
 
                 /* APPLY THE TWO TRANSFORM PASSES*/
-                /* Dequantize horizontally, then reconstruct rows vertically with the shared cosine*/
+                /* Dequantize horizontally, then reconstruct rows vertically with the shared
+                 * cosine*/
                 /* basis.*/
-                for (v = 0; v < 8; v++)
-                    for (x = 0; x < 8; x++) {
+                for (verticalFrequency = 0; verticalFrequency < 8; verticalFrequency++) {
+                    for (pixelX = 0; pixelX < 8; pixelX++) {
                         double sum = 0;
-                        for (u = 0; u < 8; u++)
-                            sum += basis[x][u] * coeff[v * 8 + u] * j->quant[co->q][v * 8 + u];
-                        tmp[v][x] = sum;
+                        for (horizontalFrequency = 0; horizontalFrequency < 8;
+                             horizontalFrequency++) {
+                            sum += basis[pixelX][horizontalFrequency] *
+                                   coeff[(verticalFrequency * 8) + horizontalFrequency] *
+                                   decoder->quant[component->q]
+                                                 [(verticalFrequency * 8) + horizontalFrequency];
+                        }
+                        tmp[verticalFrequency][pixelX] = sum;
                     }
-                for (y = 0; y < 8; y++)
-                    for (x = 0; x < 8; x++) {
+                }
+                for (pixelY = 0; pixelY < 8; pixelY++) {
+                    for (pixelX = 0; pixelX < 8; pixelX++) {
                         double sum = 0;
-                        for (v = 0; v < 8; v++)
-                            sum += basis[y][v] * tmp[v][x];
-                        co->samples[((size_t)by * 8 + y) * stride + bx * 8 + x] =
-                            clampByte(sum / 4 + 128);
+                        for (verticalFrequency = 0; verticalFrequency < 8; verticalFrequency++) {
+                            sum +=
+                                basis[pixelY][verticalFrequency] * tmp[verticalFrequency][pixelX];
+                        }
+                        component->samples[(((size_t)blockY * 8 + pixelY) * stride) + (blockX * 8) +
+                                           pixelX] = clampByte((sum / 4) + 128);
                     }
+                }
             }
+        }
     }
 
     /* Convert reconstructed samples only after every component is available.*/
-    im->rgba = malloc((size_t)j->w * j->h * 4);
-    if (!im->rgba)
+    image->rgba = malloc((size_t)decoder->w * decoder->h * 4);
+    if (!image->rgba) {
         return 0;
-    im->width = j->w;
-    im->height = j->h;
-    for (y = 0; y < j->h; y++)
-        for (x = 0; x < j->w; x++) {
+    }
+    image->width = decoder->w;
+    image->height = decoder->h;
+    for (pixelY = 0; pixelY < decoder->h; pixelY++) {
+        for (pixelX = 0; pixelX < decoder->w; pixelX++) {
             double values[3] = {128, 128, 128};
-            unsigned char *pixel = im->rgba + ((size_t)y * j->w + x) * 4;
+            unsigned char *pixel = image->rgba + (((size_t)pixelY * decoder->w + pixelX) * 4);
 
             /* UPSAMPLE COMPONENTS AT PIXEL CENTRES*/
-            /* Clamp neighbours at the visible plane edges instead of sampling padded image blocks.*/
-            for (c = 0; c < j->nc; c++) {
-                JComp *co = &j->c[c];
-                double fx = ((x + 0.5) * co->h / j->mh) - 0.5,
-                       fy = ((y + 0.5) * co->v / j->mv) - 0.5;
-                unsigned sw = (j->w * co->h + j->mh - 1) / j->mh,
-                         sh = (j->h * co->v + j->mv - 1) / j->mv, x0, y0, x1, y1,
-                         stride = co->bx * 8;
-                double ax, ay;
-                if (fx < 0)
-                    fx = 0;
-                if (fy < 0)
-                    fy = 0;
-                if (fx > sw - 1)
-                    fx = sw - 1;
-                if (fy > sh - 1)
-                    fy = sh - 1;
-                x0 = (unsigned)fx;
-                y0 = (unsigned)fy;
-                x1 = x0 + 1 < sw ? x0 + 1 : x0;
-                y1 = y0 + 1 < sh ? y0 + 1 : y0;
-                ax = fx - x0;
-                ay = fy - y0;
-                values[c] = (co->samples[(size_t)y0 * stride + x0] * (1 - ax) +
-                             co->samples[(size_t)y0 * stride + x1] * ax) *
-                                (1 - ay) +
-                            (co->samples[(size_t)y1 * stride + x0] * (1 - ax) +
-                             co->samples[(size_t)y1 * stride + x1] * ax) *
-                                ay;
+            /* Clamp neighbours at the visible plane edges instead of sampling padded image
+             * blocks.*/
+            for (componentIndex = 0; componentIndex < decoder->nc; componentIndex++) {
+                JComp *component = &decoder->c[componentIndex];
+                double fractionX = ((pixelX + 0.5) * component->h / decoder->mh) - 0.5;
+                double fractionY = ((pixelY + 0.5) * component->v / decoder->mv) - 0.5;
+                unsigned sampleWidth = (decoder->w * component->h + decoder->mh - 1) / decoder->mh;
+                unsigned sampleHeight = (decoder->h * component->v + decoder->mv - 1) / decoder->mv;
+                unsigned sampleX0;
+                unsigned sampleY0;
+                unsigned sampleX1;
+                unsigned sampleY1;
+                unsigned stride = component->bx * 8;
+                double fractionalX;
+                double fractionalY;
+                if (fractionX < 0) {
+                    fractionX = 0;
+                }
+                if (fractionY < 0) {
+                    fractionY = 0;
+                }
+                if (fractionX > sampleWidth - 1) {
+                    fractionX = sampleWidth - 1;
+                }
+                if (fractionY > sampleHeight - 1) {
+                    fractionY = sampleHeight - 1;
+                }
+                sampleX0 = (unsigned)fractionX;
+                sampleY0 = (unsigned)fractionY;
+                sampleX1 = sampleX0 + 1 < sampleWidth ? sampleX0 + 1 : sampleX0;
+                sampleY1 = sampleY0 + 1 < sampleHeight ? sampleY0 + 1 : sampleY0;
+                fractionalX = fractionX - sampleX0;
+                fractionalY = fractionY - sampleY0;
+                values[componentIndex] =
+                    (component->samples[((size_t)sampleY0 * stride) + sampleX0] *
+                         (1 - fractionalX) +
+                     component->samples[((size_t)sampleY0 * stride) + sampleX1] * fractionalX) *
+                        (1 - fractionalY) +
+                    (component->samples[((size_t)sampleY1 * stride) + sampleX0] *
+                         (1 - fractionalX) +
+                     component->samples[((size_t)sampleY1 * stride) + sampleX1] * fractionalX) *
+                        fractionalY;
             }
 
             /* CONVERT COMPONENT VALUES TO RGB*/
             /* Grayscale and explicit RGB bypass the YCbCr colour transform.*/
-            if (j->nc == 1)
+            if (decoder->nc == 1) {
                 pixel[0] = pixel[1] = pixel[2] = clampByte(values[0]);
-            else if (direct)
-                for (c = 0; c < 3; c++)
-                    pixel[c] = clampByte(values[c]);
-            else {
-                double cb = values[1] - 128, cr = values[2] - 128;
-                pixel[0] = clampByte(values[0] + 1.402 * cr);
-                pixel[1] = clampByte(values[0] - 0.344136 * cb - 0.714136 * cr);
-                pixel[2] = clampByte(values[0] + 1.772 * cb);
+            } else if (direct) {
+                for (componentIndex = 0; componentIndex < 3; componentIndex++) {
+                    pixel[componentIndex] = clampByte(values[componentIndex]);
+                }
+            } else {
+                double blueDifference = values[1] - 128;
+                double redDifference = values[2] - 128;
+                pixel[0] = clampByte(values[0] + (1.402 * redDifference));
+                pixel[1] =
+                    clampByte(values[0] - (0.344136 * blueDifference) - (0.714136 * redDifference));
+                pixel[2] = clampByte(values[0] + (1.772 * blueDifference));
             }
             pixel[3] = 255;
         }
+    }
     return 1;
 }
 
 /* ORIENTATION*/
 /**
  * Apply EXIF orientation by rearranging decoded pixels and dimensions.
- * @param im Owned image whose pixels and dimensions are transformed.
+ * @param image Owned image whose pixels and dimensions are transformed.
  * @param orientation EXIF orientation value from one through eight.
  * @return Nonzero when orientation is applied or already normal; zero on allocation failure.
  * @author kai
  */
-static int orientImage(RcImage *im, unsigned orientation) {
-    unsigned x, y, w = im->width, h = im->height, nw = orientation >= 5 ? h : w,
-                   nh = orientation >= 5 ? w : h;
+static int orientImage(RcImage *image, unsigned orientation) {
+    unsigned pixelX;
+    unsigned pixelY;
+    unsigned sourceWidth = image->width;
+    unsigned sourceHeight = image->height;
+    unsigned targetWidth = orientation >= 5 ? sourceHeight : sourceWidth;
+    unsigned targetHeight = orientation >= 5 ? sourceWidth : sourceHeight;
     unsigned char *out;
 
     /* PREPARE ORIENTATION REMAPPING*/
-    if (orientation == 1)
+    if (orientation == 1) {
         return 1;
-    out = malloc((size_t)w * h * 4);
-    if (!out)
+    }
+    out = malloc((size_t)sourceWidth * sourceHeight * 4);
+    if (!out) {
         return 0;
+    }
 
     /* MAP SOURCE PIXELS TO THE NEW GRID*/
     /* Transpose first; bits zero and one then reflect destination x and y respectively.*/
-    for (y = 0; y < h; y++)
-        for (x = 0; x < w; x++) {
+    for (pixelY = 0; pixelY < sourceHeight; pixelY++) {
+        for (pixelX = 0; pixelX < sourceWidth; pixelX++) {
             static const unsigned char reflections[9] = {0, 0, 1, 3, 2, 0, 1, 3, 2};
-            unsigned xx = orientation >= 5 ? y : x, yy = orientation >= 5 ? x : y;
-            if (reflections[orientation] & 1)
-                xx = nw - 1 - xx;
-            if (reflections[orientation] & 2)
-                yy = nh - 1 - yy;
-            memcpy(out + ((size_t)yy * nw + xx) * 4, im->rgba + ((size_t)y * w + x) * 4, 4);
+            unsigned targetX = orientation >= 5 ? pixelY : pixelX;
+            unsigned targetY = orientation >= 5 ? pixelX : pixelY;
+            if (reflections[orientation] & 1) {
+                targetX = targetWidth - 1 - targetX;
+            }
+            if (reflections[orientation] & 2) {
+                targetY = targetHeight - 1 - targetY;
+            }
+            memcpy(out + (((size_t)targetY * targetWidth + targetX) * 4),
+                   image->rgba + (((size_t)pixelY * sourceWidth + pixelX) * 4), 4);
         }
-    free(im->rgba);
-    im->rgba = out;
-    im->width = nw;
-    im->height = nh;
+    }
+    free(image->rgba);
+    image->rgba = out;
+    image->width = targetWidth;
+    image->height = targetHeight;
     return 1;
 }
 
@@ -707,33 +865,37 @@ API
 /* JPEG INPUT*/
 /**
  * Decode supported 8-bit Huffman JPEG data and optionally apply EXIF orientation.
- * @param p Complete JPEG file bytes.
+ * @param data Complete JPEG file bytes.
  * @param n JPEG length in bytes.
- * @param im Receives decoded RGBA8 pixels.
+ * @param image Receives decoded RGBA8 pixels.
  * @param orient Apply EXIF orientation for standalone images; use 0 for PDF image space.
  * @return 1 with owned RGBA pixels, or 0 without a retained allocation.
  * @author kai
  */
-int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
-    Jpeg *j = calloc(1, sizeof(*j));
-    int ok = 0, ended = 0;
-    unsigned c;
+int rcJpeg(const unsigned char *data, size_t n, RcImage *image, int orient) {
+    Jpeg *decoder = calloc(1, sizeof(*decoder));
+    int success = 0;
+    int ended = 0;
+    unsigned componentIndex;
 
     /* PREPARE DECODER OWNERSHIP*/
-    if (!j)
+    if (!decoder) {
         return 0;
-    memset(im, 0, sizeof(*im));
-    j->p = p;
-    j->n = n;
-    j->at = 2;
-    j->orientation = 1;
-    if (n < 4 || p[0] != 255 || p[1] != 216)
+    }
+    memset(image, 0, sizeof(*image));
+    decoder->p = data;
+    decoder->n = n;
+    decoder->at = 2;
+    decoder->orientation = 1;
+    if (n < 4 || data[0] != 255 || data[1] != 216) {
         goto done;
+    }
 
     /* WALK LENGTH-DELIMITED MARKERS*/
-    /* Entropy scans consume their own bytes; other marker payloads stay within the declared length.*/
-    while (j->at < n) {
-        int marker = nextMarker(j);
+    /* Entropy scans consume their own bytes; other marker payloads stay within the declared
+     * length.*/
+    while (decoder->at < n) {
+        int marker = nextMarker(decoder);
         unsigned length;
         const unsigned char *body;
         size_t payload;
@@ -742,99 +904,124 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
             break;
         }
         if (marker < 0 || marker == 216 || marker == 0 || marker == 1 ||
-            (marker >= 208 && marker <= 215))
+            (marker >= 208 && marker <= 215)) {
             goto done;
-        if (j->at + 2 > n)
+        }
+        if (decoder->at + 2 > n) {
             goto done;
-        length = j16(p + j->at);
-        if (length < 2 || length > n - j->at)
+        }
+        length = j16(data + decoder->at);
+        if (length < 2 || length > n - decoder->at) {
             goto done;
-        body = p + j->at + 2;
+        }
+        body = data + decoder->at + 2;
         payload = length - 2;
-        j->at += length;
+        decoder->at += length;
 
         /* DISPATCH THE MARKER PAYLOAD*/
         if (marker == 192 || marker == 194) {
-            j->progressive = marker == 194;
-            if (!frame(j, body, payload))
+            decoder->progressive = marker == 194;
+            if (!frame(decoder, body, payload)) {
                 goto done;
+            }
         } else if (marker == 219) {
-            size_t at = 0;
-            while (at < payload) {
+            size_t payloadOffset = 0;
+            while (payloadOffset < payload) {
                 /* READ QUANTIZATION TABLES*/
-                /* JPEG transmits values in zigzag order; the transform consumes natural coefficient*/
+                /* JPEG transmits values in zigzag order; the transform consumes natural
+                 * coefficient*/
                 /* order.*/
-                unsigned spec = body[at++], q = spec & 15, wide = spec >> 4, k;
-                if (q > 3 || wide > 1 || (wide ? 128 : 64) > payload - at)
+                unsigned spec = body[payloadOffset++];
+                unsigned tableId = spec & 15;
+                unsigned wide = spec >> 4;
+                unsigned coefficientIndex;
+                if (tableId > 3 || wide > 1 || (wide ? 128 : 64) > payload - payloadOffset) {
                     goto done;
-                for (k = 0; k < 64; k++) {
-                    unsigned value = wide ? j16(body + at + k * 2) : body[at + k];
-                    if (!value)
-                        goto done;
-                    j->quant[q][zig[k]] = value;
                 }
-                at += wide ? 128 : 64;
+                for (coefficientIndex = 0; coefficientIndex < 64; coefficientIndex++) {
+                    unsigned value = wide ? j16(body + payloadOffset + (coefficientIndex * 2))
+                                          : body[payloadOffset + coefficientIndex];
+                    if (!value) {
+                        goto done;
+                    }
+                    decoder->quant[tableId][zig[coefficientIndex]] = value;
+                }
+                payloadOffset += wide ? 128 : 64;
             }
         } else if (marker == 196) {
-            size_t at = 0;
-            while (at < payload) {
+            size_t payloadOffset = 0;
+            while (payloadOffset < payload) {
                 /* READ HUFFMAN TABLES*/
                 /* Check the canonical code space before accepting the transmitted symbol list.*/
-                unsigned spec = body[at++], kind = spec >> 4, id = spec & 15, k, total = 0;
+                unsigned spec = body[payloadOffset++];
+                unsigned kind = spec >> 4;
+                unsigned tableId = spec & 15;
+                unsigned symbolIndex;
+                unsigned total = 0;
                 int left = 1;
-                JHuff *h;
-                if (kind > 1 || id > 3 || payload - at < 16)
+                JHuff *table;
+                if (kind > 1 || tableId > 3 || payload - payloadOffset < 16) {
                     goto done;
-                h = &j->tables[kind][id];
-                memset(h, 0, sizeof(*h));
-                for (k = 1; k <= 16; k++) {
-                    h->count[k] = body[at++];
-                    total += h->count[k];
-                    left = left * 2 - (int)h->count[k];
-                    if (left < 0)
-                        goto done;
                 }
-                if (!total || total > 256 || total > payload - at)
+                table = &decoder->tables[kind][tableId];
+                memset(table, 0, sizeof(*table));
+                for (symbolIndex = 1; symbolIndex <= 16; symbolIndex++) {
+                    table->count[symbolIndex] = body[payloadOffset++];
+                    total += table->count[symbolIndex];
+                    left = left * 2 - (int)table->count[symbolIndex];
+                    if (left < 0) {
+                        goto done;
+                    }
+                }
+                if (!total || total > 256 || total > payload - payloadOffset) {
                     goto done;
-                for (k = 0; k < total; k++)
-                    h->symbol[k] = body[at++];
+                }
+                for (symbolIndex = 0; symbolIndex < total; symbolIndex++) {
+                    table->symbol[symbolIndex] = body[payloadOffset++];
+                }
             }
         } else if (marker == 221) {
             /* READ RESTART INTERVALS*/
             /* This count determines when entropy predictors reset within later scans.*/
-            if (payload != 2)
+            if (payload != 2) {
                 goto done;
-            j->restart = j16(body);
+            }
+            decoder->restart = j16(body);
         } else if (marker == 218) {
-            if (!scan(j, body, payload))
+            if (!scan(decoder, body, payload)) {
                 goto done;
+            }
         } else if (marker == 225) {
-            j->orientation = exifOrientation(body, payload);
+            decoder->orientation = exifOrientation(body, payload);
         } else if (marker == 238 && payload >= 12 && !memcmp(body, "Adobe", 5)) {
-            if (body[11] > 1)
+            if (body[11] > 1) {
                 goto done;
-            j->rgb = body[11] == 0;
-        } else if ((marker >= 192 && marker <= 207) || marker == 220)
+            }
+            decoder->rgb = body[11] == 0;
+        } else if ((marker >= 192 && marker <= 207) || marker == 220) {
             goto done;
+        }
     }
 
     /* RECONSTRUCT AND ORIENT PIXELS*/
-    if (!ended || !render(j, im))
+    if (!ended || !render(decoder, image)) {
         goto done;
-    if (orient && !orientImage(im, j->orientation))
+    }
+    if (orient && !orientImage(image, decoder->orientation)) {
         goto done;
-    ok = 1;
+    }
+    success = 1;
 done:
     /* RELEASE COMPONENT WORKSPACE*/
     /* On failure, also discard any partially reconstructed destination pixels.*/
-    for (c = 0; c < 3; c++) {
-        free(j->c[c].coef);
-        free(j->c[c].samples);
+    for (componentIndex = 0; componentIndex < 3; componentIndex++) {
+        free(decoder->c[componentIndex].coef);
+        free(decoder->c[componentIndex].samples);
     }
-    free(j);
-    if (!ok) {
-        free(im->rgba);
-        memset(im, 0, sizeof(*im));
+    free(decoder);
+    if (!success) {
+        free(image->rgba);
+        memset(image, 0, sizeof(*image));
     }
-    return ok;
+    return success;
 }

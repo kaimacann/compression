@@ -29,10 +29,28 @@ CONFIG
 #define NODE_CAPACITY 511
 #define BUFFER_SIZE 8192
 #define HEADER_SIZE 22
-#define FREQUENCY_TABLE_SIZE (SYMBOL_COUNT * 8)
+#define FREQUENCY_TABLE_SIZE (SYMBOL_COUNT * BITS_PER_BYTE)
 #define ULL_MAX_VALUE (~0ULL)
 #define FNV1A_OFFSET_BASIS 14695981039346656037ULL
 #define FNV1A_PRIME 1099511628211ULL
+#define BITS_PER_BYTE 8
+#define PDF_SIGNATURE_LENGTH 5
+#define PNG_SIGNATURE_LENGTH BITS_PER_BYTE
+#define JPEG_SIGNATURE_LENGTH 2
+#define JPEG_START_MARKER (SYMBOL_COUNT - 1)
+#define JPEG_FRAME_MARKER 216
+#define ARCHIVE_PREFIX_LENGTH 6
+#define ARCHIVE_MAGIC_LENGTH 5
+#define ARCHIVE_VERSION 1
+#define RAW_MODE 0
+#define HUFFMAN_MODE 1
+#define REPORT_LIMIT 20
+#define TEXT_SPACE 32
+#define TEXT_TILDE 126
+#define DEFAULT_PALETTE_COLORS 16
+#define DEFAULT_CONTOUR_TOLERANCE 0.5
+#define DECIMAL_BASE 10
+#define MOST_FREQUENT_COUNT 10
 
 /* FILE TRANSACTIONS*/
 /**
@@ -43,8 +61,9 @@ CONFIG
  */
 static FILE *openInputFile(const char *path) {
     FILE *file = path ? fopen(path, "rb") : NULL;
-    if (!file && path)
+    if (!file && path) {
         perror(path);
+    }
     return file;
 }
 
@@ -57,8 +76,9 @@ static FILE *openInputFile(const char *path) {
  */
 static FILE *createOutputFile(const char *path) {
     FILE *file = path ? fopen(path, "wbx") : NULL;
-    if (!file && path)
+    if (!file && path) {
         perror(path);
+    }
     return file;
 }
 
@@ -70,10 +90,28 @@ static FILE *createOutputFile(const char *path) {
  * @author kai
  */
 static int finishOutputFile(FILE *file, const char *path) {
-    if (fclose(file) == 0)
+    if (fclose(file) == 0) {
         return 1;
+    }
     perror(path);
-    remove(path);
+    if (remove(path) != 0) {
+        perror(path);
+    }
+    return 0;
+}
+
+/**
+ * Close an owned input stream and report a close failure.
+ * @param file Open input stream.
+ * @param path Input path associated with a close failure.
+ * @return Nonzero when the stream closes successfully.
+ * @author kai
+ */
+static int closeInputFile(FILE *file, const char *path) {
+    if (fclose(file) == 0) {
+        return 1;
+    }
+    perror(path);
     return 0;
 }
 
@@ -84,8 +122,12 @@ static int finishOutputFile(FILE *file, const char *path) {
  * @author kai
  */
 static void discardOutputFile(FILE *file, const char *path) {
-    fclose(file);
-    remove(path);
+    if (fclose(file) != 0) {
+        perror(path);
+    }
+    if (remove(path) != 0) {
+        perror(path);
+    }
 }
 
 #ifdef DEBUG
@@ -117,6 +159,29 @@ typedef struct {
     unsigned long long frequency;
 } SymbolFrequency;
 
+typedef struct {
+    unsigned long long frequencies[SYMBOL_COUNT];
+    unsigned long long totalBytes;
+    unsigned long long checksum;
+} InputStatistics;
+
+typedef struct {
+    int mode;
+    unsigned long long originalSize;
+    unsigned long long checksum;
+    unsigned long long *frequencies;
+} ArchiveMetadata;
+
+typedef struct {
+    FILE *input;
+    FILE *output;
+} StreamPair;
+
+typedef struct {
+    unsigned long long *frequencies;
+    unsigned long long checksum;
+} PayloadMetrics;
+
 /*//////////////////////////////////////////////////
 HUFFMAN
 //////////////////////////////////////////////////*/
@@ -131,10 +196,12 @@ HUFFMAN
  * @author kai
  */
 static int nodeLess(const HuffmanNode nodes[], int left, int right) {
-    if (nodes[left].frequency != nodes[right].frequency)
+    if (nodes[left].frequency != nodes[right].frequency) {
         return nodes[left].frequency < nodes[right].frequency;
-    if (nodes[left].minimumSymbol != nodes[right].minimumSymbol)
+    }
+    if (nodes[left].minimumSymbol != nodes[right].minimumSymbol) {
         return nodes[left].minimumSymbol < nodes[right].minimumSymbol;
+    }
     return left < right;
 }
 
@@ -147,8 +214,9 @@ static int nodeLess(const HuffmanNode nodes[], int left, int right) {
  */
 static void queueInsert(NodeQueue *queue, const HuffmanNode nodes[], int node) {
     int *at = &queue->head;
-    while (*at >= 0 && nodeLess(nodes, *at, node))
+    while (*at >= 0 && nodeLess(nodes, *at, node)) {
         at = &queue->next[*at];
+    }
     queue->next[node] = *at;
     *at = node;
 }
@@ -176,13 +244,15 @@ static int takeMinimum(NodeQueue *queue) {
 static int buildHuffmanTree(const unsigned long long frequencies[], HuffmanNode nodes[],
                             int *root) {
     NodeQueue queue = {{0}, -1};
-    int symbol, nodeCount = 0;
+    int symbol;
+    int nodeCount = 0;
 
     /* SEED THE SYMBOL CANDIDATES*/
     /* Only symbols present in the input receive leaves.*/
     for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
-        if (frequencies[symbol] == 0)
+        if (frequencies[symbol] == 0) {
             continue;
+        }
         nodes[nodeCount] = (HuffmanNode){frequencies[symbol], symbol, -1, -1, symbol};
         queueInsert(&queue, nodes, nodeCount++);
     }
@@ -194,8 +264,9 @@ static int buildHuffmanTree(const unsigned long long frequencies[], HuffmanNode 
         int right = takeMinimum(&queue);
         int parent = nodeCount++;
 
-        if (nodes[left].frequency > ULL_MAX_VALUE - nodes[right].frequency)
+        if (nodes[left].frequency > ULL_MAX_VALUE - nodes[right].frequency) {
             return 0;
+        }
         nodes[parent] = (HuffmanNode){
             nodes[left].frequency + nodes[right].frequency, -1, left, right,
             nodes[left].minimumSymbol < nodes[right].minimumSymbol ? nodes[left].minimumSymbol
@@ -244,33 +315,35 @@ CONTAINER
 /**
  * Count input bytes and symbol frequencies, then rewind the stream.
  * @param input Seekable input stream to scan and rewind.
- * @param frequencies Receives the count for each byte value.
- * @param totalBytes Receives the total number of input bytes.
- * @param checksum Receives the checksum of the scanned bytes.
+ * @param statistics Receives byte frequencies, total size, and checksum.
  * @return Nonzero when the whole stream is counted and rewound; zero on read, seek, or size error.
  * @author kai
  */
-static int scanInput(FILE *input, unsigned long long frequencies[], unsigned long long *totalBytes,
-                     unsigned long long *checksum) {
+static int scanInput(FILE *input, InputStatistics *statistics) {
     unsigned char buffer[BUFFER_SIZE];
     size_t count;
-    int i;
+    size_t index;
+    int symbol;
 
-    memset(frequencies, 0, sizeof(unsigned long long) * SYMBOL_COUNT);
-    *totalBytes = 0;
-    *checksum = FNV1A_OFFSET_BASIS;
-    while ((count = fread(buffer, 1, sizeof(buffer), input)) > 0) {
-        if ((unsigned long long)count > ULL_MAX_VALUE - *totalBytes)
-            return 0;
-        *totalBytes += (unsigned long long)count;
-        for (i = 0; (size_t)i < count; i++) {
-            unsigned int symbol = buffer[i];
-            /* Each symbol count is bounded by the checked total above.*/
-            frequencies[symbol]++;
-            *checksum ^= (unsigned long long)buffer[i];
-            *checksum *= FNV1A_PRIME;
-        }
+    for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
+        statistics->frequencies[symbol] = 0;
     }
+    statistics->totalBytes = 0;
+    statistics->checksum = FNV1A_OFFSET_BASIS;
+    do {
+        count = fread(buffer, 1, sizeof(buffer), input);
+        if ((unsigned long long)count > ULL_MAX_VALUE - statistics->totalBytes) {
+            return 0;
+        }
+        statistics->totalBytes += (unsigned long long)count;
+        for (index = 0; index < count; index++) {
+            unsigned int symbolValue = buffer[index];
+            /* Each symbol count is bounded by the checked total above.*/
+            statistics->frequencies[symbolValue]++;
+            statistics->checksum ^= (unsigned long long)buffer[index];
+            statistics->checksum *= FNV1A_PRIME;
+        }
+    } while (count == sizeof(buffer));
     return !ferror(input);
 }
 
@@ -281,13 +354,17 @@ static int scanInput(FILE *input, unsigned long long frequencies[], unsigned lon
  * @author kai
  */
 static int isMediaInput(FILE *input) {
-    unsigned char signature[8];
+    unsigned char signature[PNG_SIGNATURE_LENGTH];
     size_t count = fread(signature, 1, sizeof(signature), input);
-    if (ferror(input) || fseek(input, 0, SEEK_SET) != 0)
+    if (ferror(input) || fseek(input, 0, SEEK_SET) != 0) {
         return -1;
-    return (count >= 5 && !memcmp(signature, "%PDF-", 5)) ||
-           (count >= 8 && !memcmp(signature, "\211PNG\r\n\032\n", 8)) ||
-           (count >= 2 && signature[0] == 255 && signature[1] == 216);
+    }
+    return (count >= PDF_SIGNATURE_LENGTH &&
+            memcmp(signature, "%PDF-", PDF_SIGNATURE_LENGTH) == 0) ||
+           (count >= PNG_SIGNATURE_LENGTH &&
+            memcmp(signature, "\211PNG\r\n\032\n", PNG_SIGNATURE_LENGTH) == 0) ||
+           (count >= JPEG_SIGNATURE_LENGTH && signature[0] == JPEG_START_MARKER &&
+            signature[1] == JPEG_FRAME_MARKER);
 }
 
 /**
@@ -306,11 +383,13 @@ static int calculateEncodedBits(const unsigned long long frequencies[],
     for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
         unsigned long long length = codeLengths[symbol];
         unsigned long long contribution;
-        if (length != 0 && frequencies[symbol] > ULL_MAX_VALUE / length)
+        if (length != 0 && frequencies[symbol] > ULL_MAX_VALUE / length) {
             return 0;
+        }
         contribution = frequencies[symbol] * length;
-        if (contribution > ULL_MAX_VALUE - *bitCount)
+        if (contribution > ULL_MAX_VALUE - *bitCount) {
             return 0;
+        }
         *bitCount += contribution;
     }
     return 1;
@@ -325,11 +404,11 @@ static int calculateEncodedBits(const unsigned long long frequencies[],
  * @author kai
  */
 static int writeUnsignedLongLong(FILE *stream, unsigned long long value) {
-    unsigned char bytes[8];
-    int i;
-    for (i = 7; i >= 0; i--) {
-        bytes[i] = (unsigned char)(value & 255ULL);
-        value >>= 8;
+    unsigned char bytes[BITS_PER_BYTE];
+    int byteIndex;
+    for (byteIndex = BITS_PER_BYTE - 1; byteIndex >= 0; byteIndex--) {
+        bytes[byteIndex] = (unsigned char)(value & (SYMBOL_COUNT - 1ULL));
+        value >>= BITS_PER_BYTE;
     }
     return fwrite(bytes, 1, sizeof(bytes), stream) == sizeof(bytes);
 }
@@ -342,38 +421,40 @@ static int writeUnsignedLongLong(FILE *stream, unsigned long long value) {
  * @author kai
  */
 static int readUnsignedLongLong(FILE *stream, unsigned long long *value) {
-    unsigned char bytes[8];
-    int i;
-    if (fread(bytes, 1, sizeof(bytes), stream) != sizeof(bytes))
+    unsigned char bytes[BITS_PER_BYTE];
+    int byteIndex;
+    if (fread(bytes, 1, sizeof(bytes), stream) != sizeof(bytes)) {
         return 0;
+    }
     *value = 0;
-    for (i = 0; i < 8; i++)
-        *value = (*value << 8) | bytes[i];
+    for (byteIndex = 0; byteIndex < BITS_PER_BYTE; byteIndex++) {
+        *value = (*value << BITS_PER_BYTE) | bytes[byteIndex];
+    }
     return 1;
 }
 
 /**
  * Write the archive magic, mode, original size, and mode-specific metadata.
  * @param output Destination archive stream.
- * @param mode Archive encoding mode recorded in the header.
- * @param originalSize Uncompressed byte count recorded for restoration.
- * @param checksum Checksum of the original input bytes.
- * @param frequencies Symbol counts required by Huffman mode.
+ * @param metadata Archive mode, original size, checksum, and optional symbol counts.
  * @return Nonzero when all required header fields are written.
  * @author kai
  */
-static int writeHeader(FILE *output, int mode, unsigned long long originalSize,
-                       unsigned long long checksum, const unsigned long long frequencies[]) {
-    unsigned char prefix[6] = {'T', 'C', 'M', 'P', 1, (unsigned char)mode};
+static int writeHeader(FILE *output, const ArchiveMetadata *metadata) {
+    unsigned char prefix[ARCHIVE_PREFIX_LENGTH] = {
+        'T', 'C', 'M', 'P', ARCHIVE_VERSION, (unsigned char)metadata->mode};
     int symbol;
 
     if (fwrite(prefix, 1, sizeof(prefix), output) != sizeof(prefix) ||
-        !writeUnsignedLongLong(output, originalSize) || !writeUnsignedLongLong(output, checksum))
+        !writeUnsignedLongLong(output, metadata->originalSize) ||
+        !writeUnsignedLongLong(output, metadata->checksum)) {
         return 0;
-    if (mode == 1) {
+    }
+    if (metadata->mode == HUFFMAN_MODE) {
         for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
-            if (!writeUnsignedLongLong(output, frequencies[symbol]))
+            if (!writeUnsignedLongLong(output, metadata->frequencies[symbol])) {
                 return 0;
+            }
         }
     }
     return 1;
@@ -382,35 +463,38 @@ static int writeHeader(FILE *output, int mode, unsigned long long originalSize,
 /**
  * Validate and parse an archive header before payload decoding.
  * @param input Archive stream positioned at its first byte.
- * @param mode Receives the validated encoding mode.
- * @param originalSize Receives the expected restored byte count.
- * @param checksum Receives the expected original-data checksum.
- * @param frequencies Receives the Huffman symbol counts when present.
+ * @param metadata Receives the validated mode, size, checksum, and optional symbol counts.
  * @return Nonzero when the header fields and frequency total validate.
  * @author kai
  */
-static int readHeader(FILE *input, int *mode, unsigned long long *originalSize,
-                      unsigned long long *checksum, unsigned long long frequencies[]) {
-    unsigned char prefix[6];
+static int readHeader(FILE *input, ArchiveMetadata *metadata) {
+    unsigned char prefix[ARCHIVE_PREFIX_LENGTH];
     int symbol;
 
-    if (fread(prefix, 1, sizeof(prefix), input) != sizeof(prefix) || memcmp(prefix, "TCMP\1", 5) ||
-        prefix[5] > 1 || !readUnsignedLongLong(input, originalSize) ||
-        !readUnsignedLongLong(input, checksum))
+    if (fread(prefix, 1, sizeof(prefix), input) != sizeof(prefix) ||
+        memcmp(prefix, "TCMP\1", ARCHIVE_MAGIC_LENGTH) != 0 ||
+        prefix[ARCHIVE_PREFIX_LENGTH - 1] > HUFFMAN_MODE ||
+        !readUnsignedLongLong(input, &metadata->originalSize) ||
+        !readUnsignedLongLong(input, &metadata->checksum)) {
         return 0;
+    }
 
-    *mode = prefix[5];
-    memset(frequencies, 0, sizeof(unsigned long long) * SYMBOL_COUNT);
-    if (*mode == 1) {
+    metadata->mode = prefix[ARCHIVE_PREFIX_LENGTH - 1];
+    for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
+        metadata->frequencies[symbol] = 0;
+    }
+    if (metadata->mode == HUFFMAN_MODE) {
         unsigned long long total = 0;
         for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
-            if (!readUnsignedLongLong(input, &frequencies[symbol]) ||
-                frequencies[symbol] > ULL_MAX_VALUE - total)
+            if (!readUnsignedLongLong(input, &metadata->frequencies[symbol]) ||
+                metadata->frequencies[symbol] > ULL_MAX_VALUE - total) {
                 return 0;
-            total += frequencies[symbol];
+            }
+            total += metadata->frequencies[symbol];
         }
-        if (total != *originalSize)
+        if (total != metadata->originalSize) {
             return 0;
+        }
     }
     return 1;
 }
@@ -422,92 +506,100 @@ PAYLOADS
 /* ENCODING*/
 /**
  * Copy exactly the declared payload length and report short reads or writes.
- * @param input Source stream positioned at the payload.
- * @param output Destination stream for copied bytes.
+ * @param streams Source and destination streams for the payload transfer.
  * @param size Exact number of payload bytes to transfer.
- * @param observed Optional histogram for the encoder's second-pass validation.
- * @param checksum Receives or verifies the payload checksum.
+ * @param metrics Receives the checksum and optional symbol counts.
  * @return Nonzero when the declared bytes copy successfully and no trailing bytes remain.
  * @author kai
  */
-static int copyPayload(FILE *input, FILE *output, unsigned long long size,
-                       unsigned long long observed[], unsigned long long *checksum) {
+static int copyPayload(StreamPair streams, unsigned long long size, PayloadMetrics *metrics) {
     unsigned char buffer[BUFFER_SIZE];
-    size_t i;
-    if (observed)
-        memset(observed, 0, sizeof(unsigned long long) * SYMBOL_COUNT);
-    *checksum = FNV1A_OFFSET_BASIS;
+    size_t byteIndex;
+    int symbol;
+    if (metrics->frequencies) {
+        for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
+            metrics->frequencies[symbol] = 0;
+        }
+    }
+    metrics->checksum = FNV1A_OFFSET_BASIS;
 
     /* COPY AND MEASURE THE DECLARED PAYLOAD*/
     /* Both directions share length/checksum checks; encoding also rebuilds symbol counts.*/
     while (size) {
         size_t count = size < sizeof(buffer) ? (size_t)size : sizeof(buffer);
-        if (fread(buffer, 1, count, input) != count || fwrite(buffer, 1, count, output) != count)
+        if (fread(buffer, 1, count, streams.input) != count ||
+            fwrite(buffer, 1, count, streams.output) != count) {
             return 0;
-        for (i = 0; i < count; i++) {
-            if (observed)
-                observed[buffer[i]]++;
-            *checksum ^= buffer[i];
-            *checksum *= FNV1A_PRIME;
+        }
+        for (byteIndex = 0; byteIndex < count; byteIndex++) {
+            if (metrics->frequencies) {
+                metrics->frequencies[buffer[byteIndex]]++;
+            }
+            metrics->checksum ^= buffer[byteIndex];
+            metrics->checksum *= FNV1A_PRIME;
         }
         size -= count;
     }
-    return fgetc(input) == EOF && !ferror(input);
+    return fgetc(streams.input) == EOF && !ferror(streams.input);
 }
 
 /**
  * Encode input symbols with the supplied Huffman codes and pad the final byte.
- * @param input Source stream positioned at the bytes to encode.
- * @param output Destination archive stream.
+ * @param streams Source and destination streams for encoded payload.
  * @param codes Bit pattern assigned to each byte value.
  * @param codeLengths Number of significant bits in each code.
- * @param observed Optional counts used to verify the second input pass.
- * @param checksum Receives the checksum of encoded source bytes.
+ * @param metrics Receives the checksum and symbol counts for encoded bytes.
  * @return Nonzero when the full payload encodes and writes successfully.
  * @author kai
  */
-static int writeHuffmanPayload(FILE *input, FILE *output, const unsigned char codes[][SYMBOL_COUNT],
-                               const unsigned short codeLengths[], unsigned long long observed[],
-                               unsigned long long *checksum) {
+static int writeHuffmanPayload(StreamPair streams, unsigned char codes[][SYMBOL_COUNT],
+                               const unsigned short codeLengths[], PayloadMetrics *metrics) {
     unsigned char buffer[BUFFER_SIZE];
     unsigned char outByte = 0;
     int usedBits = 0;
     size_t count;
-    size_t i;
+    size_t byteIndex;
+    int symbolIndex;
 
-    memset(observed, 0, sizeof(unsigned long long) * SYMBOL_COUNT);
-    *checksum = FNV1A_OFFSET_BASIS;
+    for (symbolIndex = 0; symbolIndex < SYMBOL_COUNT; symbolIndex++) {
+        metrics->frequencies[symbolIndex] = 0;
+    }
+    metrics->checksum = FNV1A_OFFSET_BASIS;
 
     /* ENCODE EACH INPUT SYMBOL*/
     /* The second scan rebuilds counts and checksum while packing the selected prefix codes.*/
-    while ((count = fread(buffer, 1, sizeof(buffer), input)) > 0) {
-        for (i = 0; i < count; i++) {
-            unsigned int symbol = buffer[i];
+    do {
+        count = fread(buffer, 1, sizeof(buffer), streams.input);
+        for (byteIndex = 0; byteIndex < count; byteIndex++) {
+            unsigned int symbol = buffer[byteIndex];
             unsigned int bit;
-            observed[symbol]++;
-            *checksum ^= (unsigned long long)symbol;
-            *checksum *= FNV1A_PRIME;
+            metrics->frequencies[symbol]++;
+            metrics->checksum ^= (unsigned long long)symbol;
+            metrics->checksum *= FNV1A_PRIME;
             for (bit = 0; bit < codeLengths[symbol]; bit++) {
                 outByte = (unsigned char)((outByte << 1) | codes[symbol][bit]);
                 usedBits++;
-                if (usedBits == 8) {
-                    if (fputc(outByte, output) == EOF)
+                if (usedBits == BITS_PER_BYTE) {
+                    if (fputc(outByte, streams.output) == EOF) {
                         return 0;
+                    }
                     outByte = 0;
                     usedBits = 0;
                 }
             }
         }
-    }
-    if (ferror(input))
+    } while (count == sizeof(buffer));
+    if (ferror(streams.input)) {
         return 0;
+    }
 
     /* PAD THE LAST PAYLOAD BYTE*/
     /* Unused low bits stay zero so the decoder can verify the end of the frame.*/
     if (usedBits > 0) {
-        outByte = (unsigned char)(outByte << (8 - usedBits));
-        if (fputc(outByte, output) == EOF)
+        outByte = (unsigned char)(outByte << (BITS_PER_BYTE - usedBits));
+        if (fputc(outByte, streams.output) == EOF) {
             return 0;
+        }
     }
     return 1;
 }
@@ -535,10 +627,11 @@ static int sameFrequencies(const unsigned long long first[], const unsigned long
 static int bitReaderGet(FILE *input, BitReader *reader, int *bit) {
     if (reader->remaining == 0) {
         int next = fgetc(input);
-        if (next == EOF)
+        if (next == EOF) {
             return 0;
+        }
         reader->byte = (unsigned char)next;
-        reader->remaining = 8;
+        reader->remaining = BITS_PER_BYTE;
     }
     reader->remaining--;
     *bit = (reader->byte >> reader->remaining) & 1;
@@ -556,8 +649,9 @@ static int finishBitReader(FILE *input, const BitReader *reader) {
     int next;
     if (reader->remaining > 0) {
         unsigned int paddingMask = (1u << reader->remaining) - 1u;
-        if (((unsigned int)reader->byte & paddingMask) != 0)
+        if (((unsigned int)reader->byte & paddingMask) != 0) {
             return 0;
+        }
     }
     next = fgetc(input);
     return next == EOF && !ferror(input);
@@ -565,47 +659,53 @@ static int finishBitReader(FILE *input, const BitReader *reader) {
 
 /**
  * Decode exactly the original byte count and write each recovered symbol.
- * @param input Encoded payload stream.
- * @param output Destination for restored bytes.
+ * @param streams Encoded input and restored output streams.
  * @param originalSize Exact number of bytes to decode.
  * @param frequencies Expected counts used to reject invalid symbols.
  * @param nodes Validated Huffman tree nodes.
  * @param root Root index of the decoding tree.
- * @param checksum Receives the checksum of restored bytes.
+ * @param metrics Receives the checksum of restored bytes.
  * @return Nonzero when all symbols, frequencies, padding, and output writes validate.
  * @author kai
  */
-static int writeDecodedHuffman(FILE *input, FILE *output, unsigned long long originalSize,
+static int writeDecodedHuffman(StreamPair streams, unsigned long long originalSize,
                                const unsigned long long frequencies[], const HuffmanNode nodes[],
-                               int root, unsigned long long *checksum) {
+                               int root, PayloadMetrics *metrics) {
     BitReader reader = {0, 0};
     unsigned long long decoded[SYMBOL_COUNT] = {0};
     unsigned long long written;
-    *checksum = FNV1A_OFFSET_BASIS;
+    metrics->checksum = FNV1A_OFFSET_BASIS;
 
     for (written = 0; written < originalSize; written++) {
         int nodeIndex = root;
         int bit;
-        if (nodes[nodeIndex].symbol >= 0 && (!bitReaderGet(input, &reader, &bit) || bit != 0))
+        if (nodes[nodeIndex].symbol >= 0 &&
+            (!bitReaderGet(streams.input, &reader, &bit) || bit != 0)) {
             return 0;
+        }
         while (nodes[nodeIndex].symbol < 0) {
-            if (!bitReaderGet(input, &reader, &bit))
+            if (!bitReaderGet(streams.input, &reader, &bit)) {
                 return 0;
+            }
             nodeIndex = bit == 0 ? nodes[nodeIndex].left : nodes[nodeIndex].right;
         }
-        if (nodes[nodeIndex].symbol < 0 || nodes[nodeIndex].symbol >= SYMBOL_COUNT)
+        if (nodes[nodeIndex].symbol < 0 || nodes[nodeIndex].symbol >= SYMBOL_COUNT) {
             return 0;
-        if (decoded[nodes[nodeIndex].symbol] >= frequencies[nodes[nodeIndex].symbol])
+        }
+        if (decoded[nodes[nodeIndex].symbol] >= frequencies[nodes[nodeIndex].symbol]) {
             return 0;
+        }
         decoded[nodes[nodeIndex].symbol]++;
-        *checksum ^= (unsigned long long)nodes[nodeIndex].symbol;
-        *checksum *= FNV1A_PRIME;
-        if (fputc(nodes[nodeIndex].symbol, output) == EOF)
+        metrics->checksum ^= (unsigned long long)nodes[nodeIndex].symbol;
+        metrics->checksum *= FNV1A_PRIME;
+        if (fputc(nodes[nodeIndex].symbol, streams.output) == EOF) {
             return 0;
+        }
     }
-    if (!sameFrequencies(decoded, frequencies))
+    if (!sameFrequencies(decoded, frequencies)) {
         return 0;
-    return finishBitReader(input, &reader);
+    }
+    return finishBitReader(streams.input, &reader);
 }
 
 /*//////////////////////////////////////////////////
@@ -622,36 +722,39 @@ API
  */
 int compressFile(const char *inputPath, const char *outputPath) {
     FILE *input = openInputFile(inputPath);
-    MediaOptions options = {0, 0, 16, 0.5, NULL};
+    MediaOptions options = {0, 0, DEFAULT_PALETTE_COLORS, DEFAULT_CONTOUR_TOLERANCE, NULL};
     int media;
-    if (!input)
+    if (!input) {
         return 0;
+    }
     media = isMediaInput(input);
-    if (fclose(input) || media < 0)
+    if (fclose(input) || media < 0) {
         return 0;
+    }
     return media ? processMedia(inputPath, outputPath, &options)
-                 : archiveFile(inputPath, outputPath);
+                 : archiveFile((CompressionPaths){inputPath, outputPath});
 }
 
 /* ARCHIVE OPERATIONS*/
 /**
  * Encode a supported media file and its vector exports as one archive.
- * @param inputPath Source file path.
- * @param outputPath New archive destination; an existing file is preserved.
+ * @param paths Source file path and new archive destination; existing files are preserved.
  * @return Nonzero when the archive is written and verified against a second source pass.
  * @author kai
  */
-int archiveFile(const char *inputPath, const char *outputPath) {
+int archiveFile(CompressionPaths paths) {
+    const char *inputPath = paths.input;
+    const char *outputPath = paths.output;
     FILE *input = openInputFile(inputPath);
     FILE *output = NULL;
-    unsigned long long frequencies[SYMBOL_COUNT];
+    InputStatistics statistics;
     unsigned long long observed[SYMBOL_COUNT];
-    unsigned long long totalBytes;
-    unsigned long long checksum;
-    unsigned long long observedChecksum;
+    StreamPair streams;
+    PayloadMetrics metrics = {observed, 0};
     unsigned long long bitCount;
     unsigned long long encodedBytes;
     unsigned long long outputBytes;
+    ArchiveMetadata metadata;
     HuffmanNode nodes[NODE_CAPACITY];
     unsigned char codes[SYMBOL_COUNT][SYMBOL_COUNT] = {{0}};
     unsigned char codePath[SYMBOL_COUNT];
@@ -661,42 +764,44 @@ int archiveFile(const char *inputPath, const char *outputPath) {
 
     /* VALIDATE SOURCE AND DESTINATION*/
     if (input == NULL || outputPath == NULL || outputPath[0] == '\0') {
-        fputs("Input and output paths are required.\n", stderr);
+        (void)fputs("Input and output paths are required.\n", stderr);
         goto closeInput;
     }
 
     /* MEASURE THE SOURCE*/
     /* The histogram and checksum also detect changes between the counting and encoding passes.*/
-    if (!scanInput(input, frequencies, &totalBytes, &checksum)) {
-        fputs("Could not read the complete input or its size exceeded the supported range.\n",
-              stderr);
+    if (!scanInput(input, &statistics)) {
+        (void)fputs("Could not read the complete input or its size exceeded the supported range.\n",
+                    stderr);
         goto closeInput;
     }
-    if (totalBytes > ULL_MAX_VALUE - HEADER_SIZE - FREQUENCY_TABLE_SIZE) {
-        fputs("Input is too large for the TCMP v1 size fields.\n", stderr);
+    if (statistics.totalBytes > ULL_MAX_VALUE - HEADER_SIZE - FREQUENCY_TABLE_SIZE) {
+        (void)fputs("Input is too large for the TCMP v1 size fields.\n", stderr);
         goto closeInput;
     }
 
     /* BUILD PREFIX CODES*/
-    if (!buildHuffmanTree(frequencies, nodes, &root)) {
-        fputs("Input is too large to represent in the TCMP format.\n", stderr);
+    if (!buildHuffmanTree(statistics.frequencies, nodes, &root)) {
+        (void)fputs("Input is too large to represent in the TCMP format.\n", stderr);
         goto closeInput;
     }
-    if (root >= 0)
+    if (root >= 0) {
         assignCodes(nodes, root, codePath, 0, codes, codeLengths);
-    if (!calculateEncodedBits(frequencies, codeLengths, &bitCount)) {
-        fputs("Encoded size exceeds the supported range.\n", stderr);
+    }
+    if (!calculateEncodedBits(statistics.frequencies, codeLengths, &bitCount)) {
+        (void)fputs("Encoded size exceeds the supported range.\n", stderr);
         goto closeInput;
     }
 
     /* SELECT THE COMPLETE FRAME SIZE*/
     /* Include the histogram overhead before choosing Huffman over raw storage.*/
     encodedBytes = bitCount / 8ULL + (bitCount % 8ULL != 0 ? 1ULL : 0ULL);
-    useHuffman =
-        totalBytes > FREQUENCY_TABLE_SIZE && encodedBytes < totalBytes - FREQUENCY_TABLE_SIZE;
-    outputBytes = HEADER_SIZE + totalBytes;
-    if (useHuffman)
+    useHuffman = statistics.totalBytes > FREQUENCY_TABLE_SIZE &&
+                 encodedBytes < statistics.totalBytes - FREQUENCY_TABLE_SIZE;
+    outputBytes = HEADER_SIZE + statistics.totalBytes;
+    if (useHuffman) {
         outputBytes = HEADER_SIZE + FREQUENCY_TABLE_SIZE + encodedBytes;
+    }
 
     /* CREATE AND WRITE THE SELECTED FRAME*/
     if (fseek(input, 0, SEEK_SET) != 0) {
@@ -704,18 +809,24 @@ int archiveFile(const char *inputPath, const char *outputPath) {
         goto closeInput;
     }
     output = createOutputFile(outputPath);
-    if (output == NULL)
+    if (output == NULL) {
         goto closeInput;
+    }
 
-    DEBUG_LOG("input=%s bytes=%llu mode=%s\n", inputPath, totalBytes,
+    DEBUG_LOG("input=%s bytes=%llu mode=%s\n", inputPath, statistics.totalBytes,
               useHuffman ? "huffman" : "raw");
-    if (!writeHeader(output, useHuffman ? 1 : 0, totalBytes, checksum, frequencies))
+    streams = (StreamPair){input, output};
+    metadata = (ArchiveMetadata){useHuffman ? HUFFMAN_MODE : RAW_MODE, statistics.totalBytes,
+                                 statistics.checksum, statistics.frequencies};
+    if (!writeHeader(output, &metadata)) {
         goto cleanup;
-    if (!(useHuffman
-              ? writeHuffmanPayload(input, output, codes, codeLengths, observed, &observedChecksum)
-              : copyPayload(input, output, totalBytes, observed, &observedChecksum)) ||
-        !sameFrequencies(frequencies, observed) || observedChecksum != checksum)
+    }
+    if (!(useHuffman ? writeHuffmanPayload(streams, codes, codeLengths, &metrics)
+                     : copyPayload(streams, statistics.totalBytes, &metrics)) ||
+        !sameFrequencies(statistics.frequencies, observed) ||
+        metrics.checksum != statistics.checksum) {
         goto cleanup;
+    }
 
     /* FINALISE ONLY AFTER VALIDATED ENCODING*/
     if (fclose(input) != 0) {
@@ -724,75 +835,83 @@ int archiveFile(const char *inputPath, const char *outputPath) {
         goto cleanup;
     }
     input = NULL;
-    if (!finishOutputFile(output, outputPath))
+    if (!finishOutputFile(output, outputPath)) {
         return 0;
-    printf("Compressed %llu bytes into %llu bytes (%s frame); FNV-1a 64 %016llX: %s\n", totalBytes,
-           outputBytes, useHuffman ? "Huffman" : "raw", checksum, outputPath);
+    }
+    (void)printf("Compressed %llu bytes into %llu bytes (%s frame); FNV-1a 64 %016llX: %s\n",
+                 statistics.totalBytes, outputBytes, useHuffman ? "Huffman" : "raw",
+                 statistics.checksum, outputPath);
     return 1;
 
 cleanup:
-    fputs("Compression failed while writing the output; the incomplete file was removed.\n",
-          stderr);
+    (void)fputs("Compression failed while writing the output; the incomplete file was removed.\n",
+                stderr);
 closeInput:
     /* CLOSE OWNED HANDLES*/
     /* A failed exclusive create must never remove a pre-existing destination.*/
-    if (input != NULL)
-        fclose(input);
-    if (output != NULL)
+    if (input != NULL) {
+        (void)closeInputFile(input, inputPath);
+    }
+    if (output != NULL) {
         discardOutputFile(output, outputPath);
+    }
     return 0;
 }
 
 /**
  * Validate and restore an archive to a staged output file.
- * @param inputPath Source file path.
- * @param outputPath New destination for the restored input.
+ * @param paths Archive source and new destination for the restored input.
  * @return Nonzero when the archive validates and its restored output is finalized.
  * @author kai
  */
-int decompressFile(const char *inputPath, const char *outputPath) {
+int decompressFile(CompressionPaths paths) {
+    const char *inputPath = paths.input;
+    const char *outputPath = paths.output;
     FILE *input = openInputFile(inputPath);
     FILE *output = NULL;
     unsigned long long frequencies[SYMBOL_COUNT];
-    unsigned long long originalSize;
-    unsigned long long expectedChecksum;
-    unsigned long long actualChecksum;
+    ArchiveMetadata metadata = {0, 0, 0, frequencies};
+    PayloadMetrics metrics = {NULL, 0};
+    StreamPair streams;
     HuffmanNode nodes[NODE_CAPACITY];
-    int root;
-    int mode;
+    int root = -1;
     int success = 0;
 
     /* VALIDATE THE ARCHIVE REQUEST*/
     if (input == NULL || outputPath == NULL || outputPath[0] == '\0') {
-        fputs("Input and output paths are required.\n", stderr);
+        (void)fputs("Input and output paths are required.\n", stderr);
         goto cleanup;
     }
 
     /* READ THE FRAME CONTRACT*/
-    if (!readHeader(input, &mode, &originalSize, &expectedChecksum, frequencies)) {
-        fputs("Input is not a valid or supported TCMP v1 file.\n", stderr);
+    if (!readHeader(input, &metadata)) {
+        (void)fputs("Input is not a valid or supported TCMP v1 file.\n", stderr);
         goto cleanup;
     }
-    if (mode == 1 && (!buildHuffmanTree(frequencies, nodes, &root) || root < 0)) {
-        fputs("TCMP Huffman tree is invalid.\n", stderr);
+    if (metadata.mode == HUFFMAN_MODE &&
+        (!buildHuffmanTree(frequencies, nodes, &root) || root < 0)) {
+        (void)fputs("TCMP Huffman tree is invalid.\n", stderr);
         goto cleanup;
     }
 
     /* RESTORE THE DECLARED PAYLOAD*/
     output = createOutputFile(outputPath);
-    if (output == NULL)
+    if (output == NULL) {
         goto cleanup;
-    DEBUG_LOG("input=%s bytes=%llu mode=%s\n", inputPath, originalSize,
-              mode == 1 ? "huffman" : "raw");
+    }
+    DEBUG_LOG("input=%s bytes=%llu mode=%s\n", inputPath, metadata.originalSize,
+              metadata.mode == HUFFMAN_MODE ? "huffman" : "raw");
+    streams = (StreamPair){input, output};
 
-    success = mode == 0 ? copyPayload(input, output, originalSize, NULL, &actualChecksum)
-                        : writeDecodedHuffman(input, output, originalSize, frequencies, nodes, root,
-                                              &actualChecksum);
+    success = metadata.mode == RAW_MODE ? copyPayload(streams, metadata.originalSize, &metrics)
+                                        : writeDecodedHuffman(streams, metadata.originalSize,
+                                                              frequencies, nodes, root, &metrics);
 
     /* VERIFY INTEGRITY BEFORE FINALISING*/
-    if (!success || actualChecksum != expectedChecksum) {
-        fputs("The TCMP payload is truncated, corrupt, has trailing data, or fails its checksum.\n",
-              stderr);
+    if (!success || metrics.checksum != metadata.checksum) {
+        (void)fputs(
+            "The TCMP payload is truncated, corrupt, has trailing data, or fails its checksum.\n",
+            stderr);
         goto cleanup;
     }
     if (fclose(input) != 0) {
@@ -800,19 +919,22 @@ int decompressFile(const char *inputPath, const char *outputPath) {
         perror(inputPath);
         goto cleanup;
     }
-    if (!finishOutputFile(output, outputPath))
+    if (!finishOutputFile(output, outputPath)) {
         return 0;
+    }
 
-    printf("Restored %llu bytes (FNV-1a 64 %016llX) to %s\n", originalSize, actualChecksum,
-           outputPath);
+    (void)printf("Restored %llu bytes (FNV-1a 64 %016llX) to %s\n", metadata.originalSize,
+                 metrics.checksum, outputPath);
     return 1;
 
 cleanup:
     /* DISCARD ONLY AN OUTPUT CREATED BY THIS OPERATION*/
-    if (input != NULL)
-        fclose(input);
-    if (output != NULL)
+    if (input != NULL) {
+        (void)closeInputFile(input, inputPath);
+    }
+    if (output != NULL) {
         discardOutputFile(output, outputPath);
+    }
     return 0;
 }
 
@@ -829,8 +951,9 @@ INSPECTION
  * @author kai
  */
 static int frequencyBefore(const SymbolFrequency *left, const SymbolFrequency *right) {
-    if (left->frequency != right->frequency)
+    if (left->frequency != right->frequency) {
         return left->frequency > right->frequency;
+    }
     return left->symbol < right->symbol;
 }
 
@@ -844,9 +967,13 @@ static int frequencyBefore(const SymbolFrequency *left, const SymbolFrequency *r
  */
 static void mergeSortFrequencies(SymbolFrequency values[], SymbolFrequency scratch[], int begin,
                                  int end) {
-    int middle, left = begin, right, out = begin;
-    if (end - begin < 2)
+    int middle;
+    int left = begin;
+    int right;
+    int out = begin;
+    if (end - begin < 2) {
         return;
+    }
 
     /* SORT EACH HALF*/
     middle = begin + (end - begin) / 2;
@@ -856,13 +983,16 @@ static void mergeSortFrequencies(SymbolFrequency values[], SymbolFrequency scrat
 
     /* MERGE AND COPY BACK*/
     /* The same scratch range serves every recursion level after its children finish.*/
-    while (left < middle && right < end)
+    while (left < middle && right < end) {
         scratch[out++] =
             frequencyBefore(&values[left], &values[right]) ? values[left++] : values[right++];
-    while (left < middle)
+    }
+    while (left < middle) {
         scratch[out++] = values[left++];
-    while (right < end)
+    }
+    while (right < end) {
         scratch[out++] = values[right++];
+    }
     memcpy(values + begin, scratch + begin, (size_t)(end - begin) * sizeof(*values));
 }
 
@@ -874,20 +1004,19 @@ static void mergeSortFrequencies(SymbolFrequency values[], SymbolFrequency scrat
  */
 int inspectFile(const char *inputPath) {
     FILE *input = openInputFile(inputPath);
-    unsigned long long frequencies[SYMBOL_COUNT];
-    unsigned long long totalBytes;
-    unsigned long long checksum;
+    InputStatistics statistics;
     SymbolFrequency values[SYMBOL_COUNT];
     SymbolFrequency scratch[SYMBOL_COUNT];
     int count = 0;
     int symbol;
 
     /* MEASURE THE INPUT*/
-    if (input == NULL)
+    if (input == NULL) {
         return 0;
-    if (!scanInput(input, frequencies, &totalBytes, &checksum)) {
-        fputs("Could not read the complete input.\n", stderr);
-        fclose(input);
+    }
+    if (!scanInput(input, &statistics)) {
+        (void)fputs("Could not read the complete input.\n", stderr);
+        (void)closeInputFile(input, inputPath);
         return 0;
     }
     if (fclose(input) != 0) {
@@ -897,23 +1026,26 @@ int inspectFile(const char *inputPath) {
 
     /* SORT OCCUPIED HISTOGRAM ENTRIES*/
     for (symbol = 0; symbol < SYMBOL_COUNT; symbol++) {
-        if (frequencies[symbol] > 0) {
-            values[count++] = (SymbolFrequency){symbol, frequencies[symbol]};
+        if (statistics.frequencies[symbol] > 0) {
+            values[count++] = (SymbolFrequency){symbol, statistics.frequencies[symbol]};
         }
     }
     mergeSortFrequencies(values, scratch, 0, count);
-    DEBUG_LOG("inspect=%s bytes=%llu symbols=%d\n", inputPath, totalBytes, count);
-    printf("File: %s\nSize: %llu bytes\nDistinct byte values: %d\nFNV-1a 64 checksum: %016llX\n",
-           inputPath, totalBytes, count, checksum);
+    DEBUG_LOG("inspect=%s bytes=%llu symbols=%d\n", inputPath, statistics.totalBytes, count);
+    (void)printf(
+        "File: %s\nSize: %llu bytes\nDistinct byte values: %d\nFNV-1a 64 checksum: %016llX\n",
+        inputPath, statistics.totalBytes, count, statistics.checksum);
 
     /* REPORT THE LEADING SYMBOLS*/
-    puts("Most frequent bytes:");
-    for (symbol = 0; symbol < count && symbol < 10; symbol++) {
+    (void)puts("Most frequent bytes:");
+    for (symbol = 0; symbol < count && symbol < MOST_FREQUENT_COUNT; symbol++) {
         int byte = values[symbol].symbol;
-        if (byte >= 32 && byte <= 126)
-            printf("  0x%02X '%c'  %llu\n", (unsigned int)byte, byte, values[symbol].frequency);
-        else
-            printf("  0x%02X      %llu\n", (unsigned int)byte, values[symbol].frequency);
+        if (byte >= TEXT_SPACE && byte <= TEXT_TILDE) {
+            (void)printf("  0x%02X '%c'  %llu\n", (unsigned int)byte, byte,
+                         values[symbol].frequency);
+        } else {
+            (void)printf("  0x%02X      %llu\n", (unsigned int)byte, values[symbol].frequency);
+        }
     }
     return 1;
 }
@@ -938,22 +1070,23 @@ int searchFile(const char *inputPath, const char *pattern) {
 
     /* VALIDATE THE SEARCH REQUEST*/
     if (pattern == NULL || pattern[0] == '\0') {
-        fputs("Search text cannot be empty.\n", stderr);
+        (void)fputs("Search text cannot be empty.\n", stderr);
         return 0;
     }
     input = openInputFile(inputPath);
-    if (input == NULL)
+    if (input == NULL) {
         return 0;
+    }
     patternLength = strlen(pattern);
     if (patternLength > (size_t)-1 / sizeof(*prefix)) {
-        fputs("Search text is too long.\n", stderr);
-        fclose(input);
+        (void)fputs("Search text is too long.\n", stderr);
+        (void)closeInputFile(input, inputPath);
         return 0;
     }
     prefix = malloc(patternLength * sizeof(*prefix));
     if (prefix == NULL) {
-        fputs("Could not allocate the search index.\n", stderr);
-        fclose(input);
+        (void)fputs("Could not allocate the search index.\n", stderr);
+        (void)closeInputFile(input, inputPath);
         return 0;
     }
 
@@ -962,23 +1095,28 @@ int searchFile(const char *inputPath, const char *pattern) {
     prefix[0] = 0;
     for (i = 1; i < patternLength; i++) {
         size_t candidate = prefix[i - 1];
-        while (candidate > 0 && pattern[i] != pattern[candidate])
+        while (candidate > 0 && pattern[i] != pattern[candidate]) {
             candidate = prefix[candidate - 1];
-        if (pattern[i] == pattern[candidate])
+        }
+        if (pattern[i] == pattern[candidate]) {
             candidate++;
+        }
         prefix[i] = candidate;
     }
 
     /* SCAN WITHOUT BACKTRACKING THE INPUT*/
     while ((nextByte = fgetc(input)) != EOF) {
-        while (matched > 0 && (unsigned char)pattern[matched] != (unsigned char)nextByte)
+        while (matched > 0 && (unsigned char)pattern[matched] != (unsigned char)nextByte) {
             matched = prefix[matched - 1];
-        if ((unsigned char)pattern[matched] == (unsigned char)nextByte)
+        }
+        if ((unsigned char)pattern[matched] == (unsigned char)nextByte) {
             matched++;
+        }
         if (matched == patternLength) {
-            if (matches < 20)
-                printf("Match at byte offset %llu\n",
-                       offset + 1 - (unsigned long long)patternLength);
+            if (matches < REPORT_LIMIT) {
+                (void)printf("Match at byte offset %llu\n",
+                             offset + 1 - (unsigned long long)patternLength);
+            }
             matches++;
             matched = prefix[matched - 1];
         }
@@ -987,7 +1125,7 @@ int searchFile(const char *inputPath, const char *pattern) {
     free(prefix);
     if (ferror(input)) {
         perror(inputPath);
-        fclose(input);
+        (void)closeInputFile(input, inputPath);
         return 0;
     }
     if (fclose(input) != 0) {
@@ -997,11 +1135,12 @@ int searchFile(const char *inputPath, const char *pattern) {
 
     /* REPORT THE COMPLETE MATCH COUNT*/
     /* Only the first twenty positions are printed, but every match contributes to the total.*/
-    if (matches == 0)
-        printf("No match for \"%s\" in %s.\n", pattern, inputPath);
-    else
-        printf("Found %llu match(es) in %s%s.\n", matches, inputPath,
-               matches > 20 ? " (first 20 positions shown)" : "");
+    if (matches == 0) {
+        (void)printf("No match for \"%s\" in %s.\n", pattern, inputPath);
+    } else {
+        (void)printf("Found %llu match(es) in %s%s.\n", matches, inputPath,
+                     matches > REPORT_LIMIT ? " (first 20 positions shown)" : "");
+    }
     DEBUG_LOG("search=%s patternBytes=%lu matches=%llu\n", inputPath, (unsigned long)patternLength,
               matches);
     return 1;
