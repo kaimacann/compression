@@ -11,6 +11,7 @@ IMPORTS
 //////////////////////////////////////////////////*/
 
 /* STANDARD LIBRARIES*/
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ CONFIG
 #define NODE_CAPACITY 511
 #define BUFFER_SIZE 8192
 #define HEADER_SIZE 22
-#define FREQUENCY_TABLE_SIZE (SYMBOL_COUNT * BITS_PER_BYTE)
+#define FREQUENCY_TABLE_SIZE ((unsigned long long)SYMBOL_COUNT * BITS_PER_BYTE)
 #define ULL_MAX_VALUE (~0ULL)
 #define FNV1A_OFFSET_BASIS 14695981039346656037ULL
 #define FNV1A_PRIME 1099511628211ULL
@@ -166,6 +167,15 @@ typedef struct {
 } InputStatistics;
 
 typedef struct {
+    HuffmanNode nodes[NODE_CAPACITY];
+    unsigned char codes[SYMBOL_COUNT][SYMBOL_COUNT];
+    unsigned char codePath[SYMBOL_COUNT];
+    unsigned short codeLengths[SYMBOL_COUNT];
+    int root;
+    unsigned long long bitCount;
+} HuffmanEncoding;
+
+typedef struct {
     int mode;
     unsigned long long originalSize;
     unsigned long long checksum;
@@ -181,6 +191,14 @@ typedef struct {
     unsigned long long *frequencies;
     unsigned long long checksum;
 } PayloadMetrics;
+typedef struct {
+    StreamPair streams;
+    const ArchiveMetadata *metadata;
+    const InputStatistics *statistics;
+    const HuffmanEncoding *encoding;
+    int useHuffman;
+    PayloadMetrics *metrics;
+} ArchiveWriteContext;
 
 /*//////////////////////////////////////////////////
 HUFFMAN
@@ -213,12 +231,12 @@ static int nodeLess(const HuffmanNode nodes[], int left, int right) {
  * @author kai
  */
 static void queueInsert(NodeQueue *queue, const HuffmanNode nodes[], int node) {
-    int *at = &queue->head;
-    while (*at >= 0 && nodeLess(nodes, *at, node)) {
-        at = &queue->next[*at];
+    int *nodeLink = &queue->head;
+    while (*nodeLink >= 0 && nodeLess(nodes, *nodeLink, node)) {
+        nodeLink = &queue->next[*nodeLink];
     }
-    queue->next[node] = *at;
-    *at = node;
+    queue->next[node] = *nodeLink;
+    *nodeLink = node;
 }
 
 /**
@@ -268,9 +286,13 @@ static int buildHuffmanTree(const unsigned long long frequencies[], HuffmanNode 
             return 0;
         }
         nodes[parent] = (HuffmanNode){
-            nodes[left].frequency + nodes[right].frequency, -1, left, right,
+            nodes[left].frequency + nodes[right].frequency,
+            -1,
+            left,
+            right,
             nodes[left].minimumSymbol < nodes[right].minimumSymbol ? nodes[left].minimumSymbol
-                                                                   : nodes[right].minimumSymbol};
+                                                                   : nodes[right].minimumSymbol,
+        };
         queueInsert(&queue, nodes, parent);
     }
     *root = queue.head;
@@ -348,6 +370,27 @@ static int scanInput(FILE *input, InputStatistics *statistics) {
 }
 
 /**
+ * Measure an archive source and validate its representable frame size.
+ * @param input Source stream.
+ * @param statistics Receives source frequencies, size, and checksum.
+ * @return Nonzero when the complete source is readable and fits TCMP v1.
+ * @author kai
+ */
+static int measureArchiveSource(FILE *input, InputStatistics *statistics) {
+    if (!scanInput(input, statistics)) {
+        (void)fputs("Could not read the complete input or its size exceeded the supported range.\n",
+                    stderr);
+        return 0;
+    }
+    if (statistics->totalBytes > ULL_MAX_VALUE - (unsigned long long)HEADER_SIZE -
+                                     (unsigned long long)FREQUENCY_TABLE_SIZE) {
+        (void)fputs("Input is too large for the TCMP v1 size fields.\n", stderr);
+        return 0;
+    }
+    return 1;
+}
+
+/**
  * Detect PNG, JPEG, or PDF input from its leading signature bytes.
  * @param input Seekable stream whose leading bytes identify its format.
  * @return 1 for PNG/JPEG/PDF, 0 for other bytes, or -1 if reading or rewind fails.
@@ -395,6 +438,31 @@ static int calculateEncodedBits(const unsigned long long frequencies[],
     return 1;
 }
 
+/**
+ * Build a deterministic Huffman table and measure its encoded payload size.
+ * @param statistics Source frequency statistics.
+ * @param encoding Receives the Huffman tree, codes, and total encoded bits.
+ * @return Nonzero when a valid encoding fits the supported integer range.
+ * @author kai
+ */
+static int prepareArchiveEncoding(const InputStatistics *statistics, HuffmanEncoding *encoding) {
+    encoding->root = -1;
+    if (!buildHuffmanTree(statistics->frequencies, encoding->nodes, &encoding->root)) {
+        (void)fputs("Input is too large to represent in the TCMP format.\n", stderr);
+        return 0;
+    }
+    if (encoding->root >= 0) {
+        assignCodes(encoding->nodes, encoding->root, encoding->codePath, 0, encoding->codes,
+                    encoding->codeLengths);
+    }
+    if (!calculateEncodedBits(statistics->frequencies, encoding->codeLengths,
+                              &encoding->bitCount)) {
+        (void)fputs("Encoded size exceeds the supported range.\n", stderr);
+        return 0;
+    }
+    return 1;
+}
+
 /* HEADER FIELDS*/
 /**
  * Write an integer as eight big-endian bytes.
@@ -408,7 +476,7 @@ static int writeUnsignedLongLong(FILE *stream, unsigned long long value) {
     int byteIndex;
     for (byteIndex = BITS_PER_BYTE - 1; byteIndex >= 0; byteIndex--) {
         bytes[byteIndex] = (unsigned char)(value & (SYMBOL_COUNT - 1ULL));
-        value >>= BITS_PER_BYTE;
+        value >>= (unsigned)BITS_PER_BYTE;
     }
     return fwrite(bytes, 1, sizeof(bytes), stream) == sizeof(bytes);
 }
@@ -428,7 +496,7 @@ static int readUnsignedLongLong(FILE *stream, unsigned long long *value) {
     }
     *value = 0;
     for (byteIndex = 0; byteIndex < BITS_PER_BYTE; byteIndex++) {
-        *value = (*value << BITS_PER_BYTE) | bytes[byteIndex];
+        *value = (*value << (unsigned)BITS_PER_BYTE) | (unsigned long long)bytes[byteIndex];
     }
     return 1;
 }
@@ -442,7 +510,8 @@ static int readUnsignedLongLong(FILE *stream, unsigned long long *value) {
  */
 static int writeHeader(FILE *output, const ArchiveMetadata *metadata) {
     unsigned char prefix[ARCHIVE_PREFIX_LENGTH] = {
-        'T', 'C', 'M', 'P', ARCHIVE_VERSION, (unsigned char)metadata->mode};
+        'T', 'C', 'M', 'P', ARCHIVE_VERSION, (unsigned char)metadata->mode,
+    };
     int symbol;
 
     if (fwrite(prefix, 1, sizeof(prefix), output) != sizeof(prefix) ||
@@ -552,7 +621,7 @@ static int copyPayload(StreamPair streams, unsigned long long size, PayloadMetri
  * @return Nonzero when the full payload encodes and writes successfully.
  * @author kai
  */
-static int writeHuffmanPayload(StreamPair streams, unsigned char codes[][SYMBOL_COUNT],
+static int writeHuffmanPayload(StreamPair streams, const unsigned char codes[][SYMBOL_COUNT],
                                const unsigned short codeLengths[], PayloadMetrics *metrics) {
     unsigned char buffer[BUFFER_SIZE];
     unsigned char outByte = 0;
@@ -577,7 +646,7 @@ static int writeHuffmanPayload(StreamPair streams, unsigned char codes[][SYMBOL_
             metrics->checksum ^= (unsigned long long)symbol;
             metrics->checksum *= FNV1A_PRIME;
             for (bit = 0; bit < codeLengths[symbol]; bit++) {
-                outByte = (unsigned char)((outByte << 1) | codes[symbol][bit]);
+                outByte = (unsigned char)(((unsigned)outByte << 1U) | codes[symbol][bit]);
                 usedBits++;
                 if (usedBits == BITS_PER_BYTE) {
                     if (fputc(outByte, streams.output) == EOF) {
@@ -596,7 +665,7 @@ static int writeHuffmanPayload(StreamPair streams, unsigned char codes[][SYMBOL_
     /* PAD THE LAST PAYLOAD BYTE*/
     /* Unused low bits stay zero so the decoder can verify the end of the frame.*/
     if (usedBits > 0) {
-        outByte = (unsigned char)(outByte << (BITS_PER_BYTE - usedBits));
+        outByte = (unsigned char)(outByte << (unsigned)(BITS_PER_BYTE - usedBits));
         if (fputc(outByte, streams.output) == EOF) {
             return 0;
         }
@@ -634,7 +703,7 @@ static int bitReaderGet(FILE *input, BitReader *reader, int *bit) {
         reader->remaining = BITS_PER_BYTE;
     }
     reader->remaining--;
-    *bit = (reader->byte >> reader->remaining) & 1;
+    *bit = (int)(((unsigned)reader->byte >> (unsigned)reader->remaining) & 1U);
     return 1;
 }
 
@@ -648,13 +717,41 @@ static int bitReaderGet(FILE *input, BitReader *reader, int *bit) {
 static int finishBitReader(FILE *input, const BitReader *reader) {
     int next;
     if (reader->remaining > 0) {
-        unsigned int paddingMask = (1u << reader->remaining) - 1u;
-        if (((unsigned int)reader->byte & paddingMask) != 0) {
+        unsigned int paddingMask = (1U << (unsigned)reader->remaining) - 1U;
+        if (((unsigned int)reader->byte & paddingMask) != 0U) {
             return 0;
         }
     }
     next = fgetc(input);
     return next == EOF && !ferror(input);
+}
+
+/**
+ * Decode one symbol while validating each traversed Huffman node.
+ * @param input Encoded payload stream.
+ * @param reader Persistent bit-reader state.
+ * @param nodes Huffman tree nodes addressed by the payload.
+ * @param root Index of the validated tree root.
+ * @param symbol Receives the decoded byte symbol.
+ * @return Nonzero when a valid leaf is reached.
+ * @author kai
+ */
+static int readHuffmanSymbol(FILE *input, BitReader *reader, const HuffmanNode nodes[], int root,
+                             int *symbol) {
+    int nodeIndex = root;
+    while (nodeIndex >= 0 && nodeIndex < NODE_CAPACITY && nodes[nodeIndex].symbol < 0) {
+        int bit;
+        if (!bitReaderGet(input, reader, &bit)) {
+            return 0;
+        }
+        nodeIndex = bit == 0 ? nodes[nodeIndex].left : nodes[nodeIndex].right;
+    }
+    if (nodeIndex < 0 || nodeIndex >= NODE_CAPACITY || nodes[nodeIndex].symbol < 0 ||
+        nodes[nodeIndex].symbol >= SYMBOL_COUNT) {
+        return 0;
+    }
+    *symbol = nodes[nodeIndex].symbol;
+    return 1;
 }
 
 /**
@@ -676,29 +773,31 @@ static int writeDecodedHuffman(StreamPair streams, unsigned long long originalSi
     unsigned long long written;
     metrics->checksum = FNV1A_OFFSET_BASIS;
 
+    if (root < 0 || root >= NODE_CAPACITY) {
+        return 0;
+    }
+    if (originalSize && nodes[root].symbol < 0 &&
+        (nodes[root].left < 0 || nodes[root].left >= NODE_CAPACITY || nodes[root].right < 0 ||
+         nodes[root].right >= NODE_CAPACITY)) {
+        return 0;
+    }
+
     for (written = 0; written < originalSize; written++) {
-        int nodeIndex = root;
+        int symbol;
         int bit;
-        if (nodes[nodeIndex].symbol >= 0 &&
-            (!bitReaderGet(streams.input, &reader, &bit) || bit != 0)) {
+        if (nodes[root].symbol >= 0 && (!bitReaderGet(streams.input, &reader, &bit) || bit != 0)) {
             return 0;
         }
-        while (nodes[nodeIndex].symbol < 0) {
-            if (!bitReaderGet(streams.input, &reader, &bit)) {
-                return 0;
-            }
-            nodeIndex = bit == 0 ? nodes[nodeIndex].left : nodes[nodeIndex].right;
-        }
-        if (nodes[nodeIndex].symbol < 0 || nodes[nodeIndex].symbol >= SYMBOL_COUNT) {
+        if (!readHuffmanSymbol(streams.input, &reader, nodes, root, &symbol)) {
             return 0;
         }
-        if (decoded[nodes[nodeIndex].symbol] >= frequencies[nodes[nodeIndex].symbol]) {
+        if (decoded[symbol] >= frequencies[symbol]) {
             return 0;
         }
-        decoded[nodes[nodeIndex].symbol]++;
-        metrics->checksum ^= (unsigned long long)nodes[nodeIndex].symbol;
+        decoded[symbol]++;
+        metrics->checksum ^= (unsigned long long)symbol;
         metrics->checksum *= FNV1A_PRIME;
-        if (fputc(nodes[nodeIndex].symbol, streams.output) == EOF) {
+        if (fputc(symbol, streams.output) == EOF) {
             return 0;
         }
     }
@@ -737,6 +836,27 @@ int compressFile(const char *inputPath, const char *outputPath) {
 
 /* ARCHIVE OPERATIONS*/
 /**
+ * Write an archive header and payload, then verify the second source pass.
+ * @param context Archive streams, metadata, and payload encoding state.
+ * @return Nonzero when writing and verification both succeed.
+ * @author kai
+ */
+static int writeArchiveFrame(ArchiveWriteContext *context) {
+    if (!writeHeader(context->streams.output, context->metadata)) {
+        return 0;
+    }
+    if (!(context->useHuffman
+              ? writeHuffmanPayload(context->streams, context->encoding->codes,
+                                    context->encoding->codeLengths, context->metrics)
+              : copyPayload(context->streams, context->statistics->totalBytes, context->metrics)) ||
+        !sameFrequencies(context->statistics->frequencies, context->metrics->frequencies) ||
+        context->metrics->checksum != context->statistics->checksum) {
+        return 0;
+    }
+    return 1;
+}
+
+/**
  * Encode a supported media file and its vector exports as one archive.
  * @param paths Source file path and new archive destination; existing files are preserved.
  * @return Nonzero when the archive is written and verified against a second source pass.
@@ -751,15 +871,10 @@ int archiveFile(CompressionPaths paths) {
     unsigned long long observed[SYMBOL_COUNT];
     StreamPair streams;
     PayloadMetrics metrics = {observed, 0};
-    unsigned long long bitCount;
     unsigned long long encodedBytes;
     unsigned long long outputBytes;
     ArchiveMetadata metadata;
-    HuffmanNode nodes[NODE_CAPACITY];
-    unsigned char codes[SYMBOL_COUNT][SYMBOL_COUNT] = {{0}};
-    unsigned char codePath[SYMBOL_COUNT];
-    unsigned short codeLengths[SYMBOL_COUNT] = {0};
-    int root = -1;
+    HuffmanEncoding encoding = {0};
     int useHuffman;
 
     /* VALIDATE SOURCE AND DESTINATION*/
@@ -770,37 +885,25 @@ int archiveFile(CompressionPaths paths) {
 
     /* MEASURE THE SOURCE*/
     /* The histogram and checksum also detect changes between the counting and encoding passes.*/
-    if (!scanInput(input, &statistics)) {
-        (void)fputs("Could not read the complete input or its size exceeded the supported range.\n",
-                    stderr);
-        goto closeInput;
-    }
-    if (statistics.totalBytes > ULL_MAX_VALUE - HEADER_SIZE - FREQUENCY_TABLE_SIZE) {
-        (void)fputs("Input is too large for the TCMP v1 size fields.\n", stderr);
+    if (!measureArchiveSource(input, &statistics)) {
         goto closeInput;
     }
 
     /* BUILD PREFIX CODES*/
-    if (!buildHuffmanTree(statistics.frequencies, nodes, &root)) {
-        (void)fputs("Input is too large to represent in the TCMP format.\n", stderr);
-        goto closeInput;
-    }
-    if (root >= 0) {
-        assignCodes(nodes, root, codePath, 0, codes, codeLengths);
-    }
-    if (!calculateEncodedBits(statistics.frequencies, codeLengths, &bitCount)) {
-        (void)fputs("Encoded size exceeds the supported range.\n", stderr);
+    if (!prepareArchiveEncoding(&statistics, &encoding)) {
         goto closeInput;
     }
 
     /* SELECT THE COMPLETE FRAME SIZE*/
     /* Include the histogram overhead before choosing Huffman over raw storage.*/
-    encodedBytes = bitCount / 8ULL + (bitCount % 8ULL != 0 ? 1ULL : 0ULL);
+    encodedBytes = (encoding.bitCount / (unsigned long long)BITS_PER_BYTE) +
+                   (encoding.bitCount % (unsigned long long)BITS_PER_BYTE != 0 ? 1ULL : 0ULL);
     useHuffman = statistics.totalBytes > FREQUENCY_TABLE_SIZE &&
-                 encodedBytes < statistics.totalBytes - FREQUENCY_TABLE_SIZE;
-    outputBytes = HEADER_SIZE + statistics.totalBytes;
+                 encodedBytes < statistics.totalBytes - (unsigned long long)FREQUENCY_TABLE_SIZE;
+    outputBytes = (unsigned long long)HEADER_SIZE + statistics.totalBytes;
     if (useHuffman) {
-        outputBytes = HEADER_SIZE + FREQUENCY_TABLE_SIZE + encodedBytes;
+        outputBytes = (unsigned long long)HEADER_SIZE + (unsigned long long)FREQUENCY_TABLE_SIZE +
+                      encodedBytes;
     }
 
     /* CREATE AND WRITE THE SELECTED FRAME*/
@@ -816,15 +919,20 @@ int archiveFile(CompressionPaths paths) {
     DEBUG_LOG("input=%s bytes=%llu mode=%s\n", inputPath, statistics.totalBytes,
               useHuffman ? "huffman" : "raw");
     streams = (StreamPair){input, output};
-    metadata = (ArchiveMetadata){useHuffman ? HUFFMAN_MODE : RAW_MODE, statistics.totalBytes,
-                                 statistics.checksum, statistics.frequencies};
-    if (!writeHeader(output, &metadata)) {
-        goto cleanup;
-    }
-    if (!(useHuffman ? writeHuffmanPayload(streams, codes, codeLengths, &metrics)
-                     : copyPayload(streams, statistics.totalBytes, &metrics)) ||
-        !sameFrequencies(statistics.frequencies, observed) ||
-        metrics.checksum != statistics.checksum) {
+    metadata = (ArchiveMetadata){
+        useHuffman ? HUFFMAN_MODE : RAW_MODE,
+        statistics.totalBytes,
+        statistics.checksum,
+        statistics.frequencies,
+    };
+    if (!writeArchiveFrame(&(ArchiveWriteContext){
+            streams,
+            &metadata,
+            &statistics,
+            &encoding,
+            useHuffman,
+            &metrics,
+        })) {
         goto cleanup;
     }
 
@@ -976,7 +1084,7 @@ static void mergeSortFrequencies(SymbolFrequency values[], SymbolFrequency scrat
     }
 
     /* SORT EACH HALF*/
-    middle = begin + (end - begin) / 2;
+    middle = begin + ((end - begin) / 2);
     mergeSortFrequencies(values, scratch, begin, middle);
     mergeSortFrequencies(values, scratch, middle, end);
     right = middle;
@@ -1052,6 +1160,48 @@ int inspectFile(const char *inputPath) {
 
 /* BYTE SEARCH*/
 /**
+ * Build the KMP failure table for a byte pattern.
+ * @param pattern Search bytes.
+ * @param patternLength Number of pattern bytes.
+ * @param prefix Receives the longest proper prefix ending at each pattern position.
+ * @author kai
+ */
+static void buildSearchPrefix(const char *pattern, size_t patternLength, size_t prefix[]) {
+    size_t prefixIndex;
+    prefix[0] = 0;
+    for (prefixIndex = 1; prefixIndex < patternLength; prefixIndex++) {
+        size_t candidate = prefix[prefixIndex - 1];
+        while (candidate > 0 && pattern[prefixIndex] != pattern[candidate]) {
+            candidate = prefix[candidate - 1];
+        }
+        if (pattern[prefixIndex] == pattern[candidate]) {
+            candidate++;
+        }
+        prefix[prefixIndex] = candidate;
+    }
+}
+
+/**
+ * Advance KMP matching state by one input byte.
+ * @param matched Previously matched prefix length.
+ * @param nextByte Input byte.
+ * @param pattern Search bytes.
+ * @param prefix KMP failure table.
+ * @return New matched prefix length.
+ * @author kai
+ */
+static size_t advanceSearch(size_t matched, int nextByte, const char *pattern,
+                            const size_t prefix[]) {
+    while (matched > 0 && (unsigned char)pattern[matched] != (unsigned char)nextByte) {
+        matched = prefix[matched - 1];
+    }
+    if ((unsigned char)pattern[matched] == (unsigned char)nextByte) {
+        matched++;
+    }
+    return matched;
+}
+
+/**
  * Search a file for a literal byte pattern and report matching offsets.
  * @param inputPath Source file to scan.
  * @param pattern Non-empty byte sequence to find.
@@ -1066,7 +1216,6 @@ int searchFile(const char *inputPath, const char *pattern) {
     unsigned long long offset = 0;
     unsigned long long matches = 0;
     int nextByte;
-    size_t i;
 
     /* VALIDATE THE SEARCH REQUEST*/
     if (pattern == NULL || pattern[0] == '\0') {
@@ -1092,26 +1241,11 @@ int searchFile(const char *inputPath, const char *pattern) {
 
     /* BUILD THE KMP FAILURE TABLE*/
     /* Fallback lengths preserve earlier partial matches without rescanning input bytes.*/
-    prefix[0] = 0;
-    for (i = 1; i < patternLength; i++) {
-        size_t candidate = prefix[i - 1];
-        while (candidate > 0 && pattern[i] != pattern[candidate]) {
-            candidate = prefix[candidate - 1];
-        }
-        if (pattern[i] == pattern[candidate]) {
-            candidate++;
-        }
-        prefix[i] = candidate;
-    }
+    buildSearchPrefix(pattern, patternLength, prefix);
 
     /* SCAN WITHOUT BACKTRACKING THE INPUT*/
     while ((nextByte = fgetc(input)) != EOF) {
-        while (matched > 0 && (unsigned char)pattern[matched] != (unsigned char)nextByte) {
-            matched = prefix[matched - 1];
-        }
-        if ((unsigned char)pattern[matched] == (unsigned char)nextByte) {
-            matched++;
-        }
+        matched = advanceSearch(matched, nextByte, pattern, prefix);
         if (matched == patternLength) {
             if (matches < REPORT_LIMIT) {
                 (void)printf("Match at byte offset %llu\n",

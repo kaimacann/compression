@@ -35,6 +35,7 @@ The Makefile builds one executable from `src/c/main`, `src/c/compression`, `src/
 | `pnpm run docs`           | Start the local Docs development server on port 3010. Stop it with `Ctrl+C`.                      |
 | `pnpm run build`          | Build the static Docs site under `dist/docs`.                                                     |
 | `pnpm run quality`        | Run configured quality checks, including the C build and parameter-documentation check.           |
+| `pnpm run quality:all`    | Run the complete configured quality suite.                                                        |
 | `pnpm run format`         | Format the README and editable Docs Markdown in place; the verbatim assessment brief is excluded. |
 | `pnpm run format:c`       | Run `make format-c`.                                                                              |
 | `pnpm run format:c:check` | Run `make format-c-check`.                                                                        |

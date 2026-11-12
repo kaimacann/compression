@@ -34,7 +34,7 @@ enum {
     MAX_PALETTE_COLORS = 256,
     DECIMAL_RADIX = 10,
     SINGLE_DIGIT_WIDTH = 1,
-    SIDECAR_INDEX_WIDTH = 3
+    SIDECAR_INDEX_WIDTH = 3,
 };
 
 typedef struct {
@@ -57,7 +57,7 @@ typedef enum {
     MEDIA_FORMAT_UNSUPPORTED,
     MEDIA_FORMAT_PDF,
     MEDIA_FORMAT_PNG,
-    MEDIA_FORMAT_JPEG
+    MEDIA_FORMAT_JPEG,
 } MediaFormat;
 typedef struct {
     RcBuffer source;
@@ -658,7 +658,8 @@ static int prepareRaster(MediaWork *work, const MediaOptions *options) {
         return 0;
     }
     if (options->vectorMode) {
-        if (!rcVectorize(&work->image, options->colors, options->tolerance, &work->vector)) {
+        if (!rcVectorize(&work->image, (RcVectorOptions){options->colors, options->tolerance},
+                         &work->vector)) {
             (void)fputs("Image vectorization exceeded resources or encountered invalid geometry.\n",
                         stderr);
             return 0;

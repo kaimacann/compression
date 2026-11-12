@@ -10,6 +10,7 @@ IMPORTS
 #include "codec.h"
 #include "media.h"
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -29,7 +30,10 @@ enum {
     MAX_PALETTE_COLORS = 256,
     INITIAL_POINT_CAPACITY = 256,
     MIN_SIMPLIFY_POINTS = 5,
-    PATH_FORMAT_CAPACITY = 96
+    EDGE_DIRECTION_COUNT = 4,
+    PATH_FORMAT_CAPACITY = 96,
+    VECTOR_TEXT_BUFFER_CAPACITY = 256,
+    MIN_PALETTE_COLORS = 2,
 };
 static const unsigned ALPHA_DISTANCE_WEIGHT = 2;
 typedef struct {
@@ -40,11 +44,52 @@ typedef struct {
     unsigned begin, end;
 } ColorBox;
 typedef struct {
+    ColorBin *histogram;
+    ColorBin *bins;
+    unsigned binCount;
+} ColorBinCollection;
+typedef struct {
+    unsigned boxCount;
+    unsigned chosenBox;
+    unsigned channel;
+    unsigned long population;
+} ColorSplit;
+typedef struct {
     RcBuffer svg, pdf;
 } Paths;
 typedef struct {
+    const RcImage *image;
+    const unsigned char *labels;
+    const unsigned char (*palette)[COLOR_CHANNELS];
+    unsigned int *visited;
+    Paths *paths;
+    unsigned paletteCount;
+    size_t total;
+    double tolerance;
+} TraceContext;
+typedef struct {
+    int x;
+    int y;
+    unsigned direction;
+    unsigned color;
+} EdgeStart;
+typedef struct {
+    const RcImage *image;
+    const unsigned char (*palette)[COLOR_CHANNELS];
+    const Paths *paths;
+    unsigned count;
+    RcVector *out;
+    char *text;
+    size_t capacity;
+} VectorOutputContext;
+typedef struct {
     int x, y;
 } Point;
+typedef struct {
+    Point position;
+    unsigned direction;
+    int color;
+} EdgeQuery;
 typedef struct {
     Point *p;
     size_t count, capacity;
@@ -83,39 +128,81 @@ static unsigned colorKey(const unsigned char *pixel) {
     if (!pixel[ALPHA_CHANNEL]) {
         return 0;
     }
-    return ((unsigned)(pixel[0] >> COLOR_BUCKET_SHIFT) << 12) |
-           ((unsigned)(pixel[1] >> COLOR_BUCKET_SHIFT) << 8) |
-           ((unsigned)(pixel[2] >> COLOR_BUCKET_SHIFT) << COLOR_BUCKET_SHIFT) |
-           (pixel[ALPHA_CHANNEL] >> COLOR_BUCKET_SHIFT);
+    return (((unsigned)pixel[0] >> (unsigned)COLOR_BUCKET_SHIFT)
+            << (unsigned)(COLOR_BUCKET_SHIFT * 3)) |
+           (((unsigned)pixel[1] >> (unsigned)COLOR_BUCKET_SHIFT)
+            << (unsigned)(COLOR_BUCKET_SHIFT * 2)) |
+           (((unsigned)pixel[2] >> (unsigned)COLOR_BUCKET_SHIFT) << (unsigned)COLOR_BUCKET_SHIFT) |
+           ((unsigned)pixel[ALPHA_CHANNEL] >> (unsigned)COLOR_BUCKET_SHIFT);
 }
 /**
  * Order colour bins on the channel selected for the current median cut.
- * @param left First ColorBin supplied to qsort.
- * @param right Second ColorBin supplied to qsort.
+ * @param leftBin First colour bin.
+ * @param rightBin Second colour bin.
  * @return Negative, zero, or positive according to selected channel and stable colour order.
  * @author kai
  */
-static int compareBins(const void *left,
-                       const void *right) { // NOLINT(bugprone-easily-swappable-parameters) -- qsort
-                                            // requires two identically typed element pointers.
-    const ColorBin *leftBin = left;
-    const ColorBin *rightBin = right;
-    int difference = (int)leftBin->value[sortChannel] - rightBin->value[sortChannel];
+static int compareBins(const ColorBin *leftBin, const ColorBin *rightBin) {
+    int difference = (int)leftBin->value[sortChannel] - (int)rightBin->value[sortChannel];
     return difference ? difference : memcmp(leftBin->value, rightBin->value, COLOR_CHANNELS);
+}
+
+/**
+ * Restore the max-heap property in one colour-bin range.
+ * @param bins Heap values.
+ * @param root Root index within the range.
+ * @param count Number of values in the heap.
+ * @author kai
+ */
+static void siftColorBins(ColorBin bins[], size_t root, size_t count) {
+    while (root < count / 2) {
+        size_t child = (root * 2) + 1;
+        if (child + 1 < count && compareBins(&bins[child], &bins[child + 1]) < 0) {
+            child++;
+        }
+        if (compareBins(&bins[root], &bins[child]) >= 0) {
+            return;
+        }
+        {
+            ColorBin temporary = bins[root];
+            bins[root] = bins[child];
+            bins[child] = temporary;
+        }
+        root = child;
+    }
+}
+
+/**
+ * Sort colour bins by their selected channel and stable colour tie-breakers.
+ * @param bins Colour bins to sort in place.
+ * @param count Number of bins.
+ * @author kai
+ */
+static void sortColorBins(ColorBin bins[], size_t count) {
+    size_t start = count / 2;
+    size_t end = count;
+    while (start > 0) {
+        start--;
+        siftColorBins(bins, start, count);
+    }
+    while (end > 1) {
+        ColorBin temporary = bins[0];
+        bins[0] = bins[end - 1];
+        bins[end - 1] = temporary;
+        end--;
+        siftColorBins(bins, 0, end);
+    }
 }
 
 /* MEDIAN CUT*/
 /**
  * Build a population-weighted palette and assign each pixel to its nearest entry.
  * @param image Decoded RGBA image to quantize.
- * @param histogramOutput Receives the populated histogram.
- * @param binsOutput Receives compact entries for occupied histogram buckets.
- * @param binCountOutput Receives the number of occupied buckets.
+ * @param collection Receives the histogram, occupied buckets, and count.
  * @return Nonzero when palette labels are populated; zero on allocation failure.
  * @author kai
  */
-static int collectColorBins(const RcImage *image, ColorBin **histogramOutput, ColorBin **binsOutput,
-                            unsigned *binCountOutput) {
+static int collectColorBins(const RcImage *image, ColorBinCollection *collection) {
     ColorBin *histogram = calloc(COLOR_KEY_COUNT, sizeof(*histogram));
     ColorBin *bins;
     unsigned binCount = 0;
@@ -156,9 +243,9 @@ static int collectColorBins(const RcImage *image, ColorBin **histogramOutput, Co
             bins[binCount++] = histogram[bucketIndex];
         }
     }
-    *histogramOutput = histogram;
-    *binsOutput = bins;
-    *binCountOutput = binCount;
+    collection->histogram = histogram;
+    collection->bins = bins;
+    collection->binCount = binCount;
     return 1;
 }
 
@@ -173,8 +260,12 @@ static int collectColorBins(const RcImage *image, ColorBin **histogramOutput, Co
  */
 static unsigned long scoreColorBox(const ColorBin *bins, ColorBox box, unsigned *channelOutput,
                                    unsigned long *populationOutput) {
-    unsigned minimum[COLOR_CHANNELS] = {COLOR_CHANNEL_MAX, COLOR_CHANNEL_MAX, COLOR_CHANNEL_MAX,
-                                        COLOR_CHANNEL_MAX};
+    unsigned minimum[COLOR_CHANNELS] = {
+        COLOR_CHANNEL_MAX,
+        COLOR_CHANNEL_MAX,
+        COLOR_CHANNEL_MAX,
+        COLOR_CHANNEL_MAX,
+    };
     unsigned maximum[COLOR_CHANNELS] = {0};
     unsigned channelIndex;
     unsigned binIndex;
@@ -239,29 +330,25 @@ static unsigned chooseColorBox(const ColorBin *bins, const ColorBox *boxes, unsi
  * Split one bin range near its population-weighted median.
  * @param bins Colour buckets that are sorted and divided in place.
  * @param boxes Current ranges to update.
- * @param boxCount Number of boxes before appending the new range.
- * @param chosenBox Range index selected for splitting.
- * @param channel Channel used to sort the selected range.
- * @param population Total pixel population in the selected range.
+ * @param splitOptions Selected range, current box count, sort channel, and population.
  * @author kai
  */
-static void splitColorBox(ColorBin *bins, ColorBox *boxes, unsigned boxCount, unsigned chosenBox,
-                          unsigned channel, unsigned long population) {
-    ColorBox box = boxes[chosenBox];
+static void splitColorBox(ColorBin *bins, ColorBox *boxes, ColorSplit splitOptions) {
+    ColorBox box = boxes[splitOptions.chosenBox];
     unsigned split = box.begin + 1;
     unsigned binIndex;
     unsigned long populationAtSplit = 0;
-    sortChannel = channel;
-    qsort(bins + box.begin, box.end - box.begin, sizeof(*bins), compareBins);
+    sortChannel = splitOptions.channel;
+    sortColorBins(bins + box.begin, box.end - box.begin);
     for (binIndex = box.begin; binIndex + 1 < box.end; binIndex++) {
         populationAtSplit += bins[binIndex].count;
         split = binIndex + 1;
-        if (populationAtSplit >= population / 2) {
+        if (populationAtSplit >= splitOptions.population / 2) {
             break;
         }
     }
-    boxes[chosenBox].end = split;
-    boxes[boxCount] = (ColorBox){split, box.end};
+    boxes[splitOptions.chosenBox].end = split;
+    boxes[splitOptions.boxCount] = (ColorBox){split, box.end};
 }
 
 /**
@@ -286,9 +373,13 @@ static void averagePalette(const ColorBin *bins, const ColorBox *boxes, unsigned
                 sums[channelIndex] += bins[binIndex].sum[channelIndex];
             }
         }
+        if (!population) {
+            memset(palette[boxIndex], 0, COLOR_CHANNELS);
+            continue;
+        }
         for (channelIndex = 0; channelIndex < COLOR_CHANNELS; channelIndex++) {
             palette[boxIndex][channelIndex] =
-                (unsigned char)((sums[channelIndex] + population / 2) / population);
+                (unsigned char)((sums[channelIndex] + (population / 2)) / population);
         }
     }
 }
@@ -342,6 +433,7 @@ static int paletteImage(const RcImage *image, unsigned requested,
                         unsigned char **labels) {
     ColorBin *histogram = NULL;
     ColorBin *bins = NULL;
+    ColorBinCollection collection = {0};
     ColorBox boxes[MAX_PALETTE_COLORS];
     unsigned binCount = 0;
     unsigned paletteCount = 1;
@@ -350,13 +442,21 @@ static int paletteImage(const RcImage *image, unsigned requested,
     unsigned chosenBox;
     unsigned long population = 0;
     size_t pixelIndex;
-    size_t pixelCount = (size_t)image->width * image->height;
+    size_t pixelCount;
     int succeeded = 0;
-    *labels = NULL;
-    if (!collectColorBins(image, &histogram, &bins, &binCount)) {
+    if (!image || !image->rgba || !image->width || !image->height || !requested || !palette ||
+        !used || !labels) {
         return 0;
     }
-    pixelLabels = malloc(pixelCount);
+    pixelCount = (size_t)image->width * image->height;
+    *labels = NULL;
+    if (!collectColorBins(image, &collection)) {
+        return 0;
+    }
+    histogram = collection.histogram;
+    bins = collection.bins;
+    binCount = collection.binCount;
+    pixelLabels = calloc(pixelCount, sizeof(*pixelLabels));
     if (!pixelLabels) {
         goto done;
     }
@@ -367,7 +467,7 @@ static int paletteImage(const RcImage *image, unsigned requested,
         if (chosenBox == MAX_PALETTE_COLORS) {
             break;
         }
-        splitColorBox(bins, boxes, paletteCount, chosenBox, channel, population);
+        splitColorBox(bins, boxes, (ColorSplit){paletteCount, chosenBox, channel, population});
         paletteCount++;
     }
     averagePalette(bins, boxes, paletteCount, palette);
@@ -395,255 +495,331 @@ CONTOURS
 /* EDGE GRAPH*/
 /**
  * Append a contour vertex, growing the point list as needed.
- * @param p Contour point array to extend.
- * @param x Horizontal position.
- * @param y Vertical position.
+ * @param pointList Contour point array to extend.
+ * @param xPosition Horizontal position.
+ * @param yPosition Vertical position.
  * @return Nonzero when the vertex is appended; zero when bounded allocation fails.
  * @author kai
  */
-static int pointAdd(Points *p, int x, int y) {
-    if (p->count == p->capacity) {
-        size_t cap = p->capacity ? p->capacity * 2 : 256;
-        Point *q;
-        if (cap > RC_LIMIT / sizeof(Point)) {
+static int pointAdd(Points *pointList, int xPosition, int yPosition) {
+    if (pointList->count == pointList->capacity) {
+        size_t newCapacity = pointList->capacity ? pointList->capacity * 2 : INITIAL_POINT_CAPACITY;
+        Point *newPoints;
+        if (newCapacity > RC_LIMIT / sizeof(Point)) {
             return 0;
         }
-        q = realloc(p->p, cap * sizeof(*q));
-        if (!q) {
+        newPoints = realloc(pointList->p, newCapacity * sizeof(*newPoints));
+        if (!newPoints) {
             return 0;
         }
-        p->p = q;
-        p->capacity = cap;
+        pointList->p = newPoints;
+        pointList->capacity = newCapacity;
     }
-    p->p[p->count++] = (Point){x, y};
+    pointList->p[pointList->count++] = (Point){xPosition, yPosition};
     return 1;
 }
 /**
  * Return a palette label at a pixel coordinate, or the transparent/outside label.
  * @param labels Row-major palette index for each pixel.
- * @param w Image width used for row addressing.
- * @param h Image height used to identify outside coordinates.
- * @param x Horizontal position.
- * @param y Vertical position.
+ * @param imageWidth Image width used for row addressing.
+ * @param imageHeight Image height used to identify outside coordinates.
+ * @param xPosition Horizontal position.
+ * @param yPosition Vertical position.
  * @return Palette index at the coordinate, or -1 outside the image.
  * @author kai
  */
-static int labelAt(const unsigned char *labels, unsigned w, unsigned h, int x, int y) {
-    return x < 0 || y < 0 || (unsigned)x >= w || (unsigned)y >= h
+static int labelAt(const unsigned char *labels, unsigned imageWidth, unsigned imageHeight,
+                   int xPosition, int yPosition) {
+    return !labels || xPosition < 0 || yPosition < 0 || (unsigned)xPosition >= imageWidth ||
+                   (unsigned)yPosition >= imageHeight
                ? -1
-               : labels[((size_t)y * w) + (unsigned)x];
+               : labels[((size_t)yPosition * imageWidth) + (unsigned)xPosition];
 }
 /**
  * Check whether a directed pixel edge borders the requested palette region.
  * @param labels Row-major palette labels.
- * @param w Image width.
- * @param h Image height.
- * @param x Horizontal position.
- * @param y Vertical position.
- * @param d Clockwise edge direction: east, south, west, or north.
- * @param color Palette index whose boundary is being traced.
+ * @param imageWidth Image width.
+ * @param imageHeight Image height.
+ * @param query Pixel corner, clockwise edge direction, and palette index to trace.
  * @param cell Receives the adjacent pixel index for visited-edge tracking.
  * @return Nonzero when this edge borders the requested region and cell is set.
  * @author kai
  */
-static int edge(const unsigned char *labels, unsigned w, unsigned h, int x, int y, unsigned d,
-                int color, size_t *cell) {
+static int edge(const unsigned char *labels, unsigned imageWidth, unsigned imageHeight,
+                EdgeQuery query, size_t *cell) {
     static const int rightX[4] = {0, -1, -1, 0};
     static const int rightY[4] = {0, 0, -1, -1};
     static const int leftX[4] = {0, 0, -1, -1};
     static const int leftY[4] = {-1, 0, 0, -1};
-    int rx = x + rightX[d];
-    int ry = y + rightY[d];
-    int lx = x + leftX[d];
-    int ly = y + leftY[d];
-    if (labelAt(labels, w, h, rx, ry) != color || labelAt(labels, w, h, lx, ly) == color) {
+    int rightXPosition;
+    int rightYPosition;
+    int leftXPosition;
+    int leftYPosition;
+    if (query.direction >= EDGE_DIRECTION_COUNT || !cell) {
         return 0;
     }
-    *cell = (size_t)ry * w + (unsigned)rx;
+    rightXPosition = query.position.x + rightX[query.direction];
+    rightYPosition = query.position.y + rightY[query.direction];
+    leftXPosition = query.position.x + leftX[query.direction];
+    leftYPosition = query.position.y + leftY[query.direction];
+    if (rightXPosition < 0 || rightYPosition < 0 || (unsigned)rightXPosition >= imageWidth ||
+        (unsigned)rightYPosition >= imageHeight) {
+        return 0;
+    }
+    if (labelAt(labels, imageWidth, imageHeight, rightXPosition, rightYPosition) != query.color ||
+        labelAt(labels, imageWidth, imageHeight, leftXPosition, leftYPosition) == query.color) {
+        return 0;
+    }
+    *cell = ((size_t)rightYPosition * imageWidth) + (unsigned)rightXPosition;
     return 1;
 }
 
 /* SIMPLIFICATION*/
 /**
  * Measure squared distance from a point to a line segment for contour simplification.
- * @param p Point whose distance is measured.
- * @param a First endpoint of the segment.
- * @param b Second endpoint of the segment.
- * @return Squared distance from p to the nearest point on segment ab.
+ * @param point Point whose distance is measured.
+ * @param startPoint First endpoint of the segment.
+ * @param endPoint Second endpoint of the segment.
+ * @return Squared distance from point to the nearest point on the segment.
  * @author kai
  */
-static double distanceSquared(Point p, Point a, Point b) {
-    double dx = b.x - a.x;
-    double dy = b.y - a.y;
-    double t = 0;
-    double ex;
-    double ey;
-    if (dx || dy) {
-        t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+static double distanceSquared(Point point, Point startPoint, Point endPoint) {
+    double deltaX = endPoint.x - startPoint.x;
+    double deltaY = endPoint.y - startPoint.y;
+    double projection = 0;
+    double errorX;
+    double errorY;
+    if (deltaX || deltaY) {
+        projection = (((point.x - startPoint.x) * deltaX) + ((point.y - startPoint.y) * deltaY)) /
+                     ((deltaX * deltaX) + (deltaY * deltaY));
     }
-    t = fmax(0, fmin(1, t));
-    ex = p.x - a.x - t * dx;
-    ey = p.y - a.y - t * dy;
-    return (ex * ex) + (ey * ey);
+    projection = fmax(0, fmin(1, projection));
+    errorX = point.x - startPoint.x - (projection * deltaX);
+    errorY = point.y - startPoint.y - (projection * deltaY);
+    return (errorX * errorX) + (errorY * errorY);
 }
-/**
- * Simplify a closed contour while retaining winding, shared colour anchors, and three vertices.
- * @param p Closed contour whose vertices may be removed.
- * @param tolerance Contour simplification tolerance.
- * @param labels Neighbouring palette labels used to preserve shared anchors.
- * @param w Image width for label lookups.
- * @param h Image height for label lookups.
- * @return Nonzero when simplification completes; zero if scratch allocation fails.
+
+/** Count distinct palette labels around one pixel corner.
+ * @param labels Row-major palette labels.
+ * @param imageWidth Image width for label lookup.
+ * @param imageHeight Image height for label lookup.
+ * @param vertex Corner whose four neighbouring pixel labels are examined.
+ * @return Number of distinct labels around the corner.
  * @author kai
  */
-static int simplify(Points *p, double tolerance, const unsigned char *labels, unsigned w,
-                    unsigned h) {
-    unsigned char *keep;
-    size_t *stack;
-    size_t top = 0;
-    size_t n = p->count;
-    size_t i;
-    Point *scratch;
-    int ok = 0;
-
-    /* PREPARE CONTOUR SIMPLIFICATION*/
-    if (n < 5 || tolerance <= 0) {
-        return 1;
-    }
-    keep = calloc(n + 1, 1);
-    stack = malloc((n + 1) * 2 * sizeof(*stack));
-    scratch = malloc(n * sizeof(*scratch));
-    if (!keep || !stack || !scratch) {
-        goto done;
-    }
-    /* Shared boundaries must choose identical anchors in either direction. */
-    {
-        /* LOCK SHARED JUNCTIONS*/
-        /* Three or more surrounding labels make this vertex a boundary that neither neighbour may*/
-        /* move.*/
-        size_t anchor = 0;
-        size_t junction = n;
-        for (i = 0; i < n; i++) {
-            int values[4];
-            int distinct = 0;
-            int q;
-            int j;
-            int x = p->p[i].x;
-            int y = p->p[i].y;
-            values[0] = labelAt(labels, w, h, x - 1, y - 1);
-            values[1] = labelAt(labels, w, h, x, y - 1);
-            values[2] = labelAt(labels, w, h, x - 1, y);
-            values[3] = labelAt(labels, w, h, x, y);
-            for (q = 0; q < 4; q++) {
-                for (j = 0; j < q; j++) {
-                    if (values[j] == values[q]) {
-                        break;
-                    }
-                }
-                if (j == q) {
-                    distinct++;
-                }
-            }
-            if (x < p->p[anchor].x || (x == p->p[anchor].x && y < p->p[anchor].y)) {
-                anchor = i;
-            }
-            if (distinct >= 3 && (junction == n || x < p->p[junction].x ||
-                                  (x == p->p[junction].x && y < p->p[junction].y))) {
-                junction = i;
-            }
-            stack[i] = (size_t)(distinct >= 3);
-        }
-
-        /* ROTATE TO A SHARED ANCHOR*/
-        /* Lexicographic anchors make forward and reverse traversals choose the same segments.*/
-        if (junction != n) {
-            anchor = junction;
-        }
-        for (i = 0; i < n; i++) {
-            size_t original = (anchor + i) % n;
-            scratch[i] = p->p[original];
-            keep[i] = (unsigned char)stack[original];
-        }
-        memcpy(p->p, scratch, n * sizeof(*scratch));
-    }
-
-    /* SEED LOCKED SEGMENTS*/
-    /* Retain the closing vertex and split work only between fixed junctions.*/
-    if (!pointAdd(p, p->p[0].x, p->p[0].y)) {
-        goto done;
-    }
-    keep[0] = keep[n] = 1;
-    {
-        size_t begin = 0;
-        for (i = 1; i <= n; i++) {
-            if (keep[i]) {
-                stack[top++] = begin;
-                stack[top++] = i;
-                begin = i;
+static int distinctCornerLabels(const unsigned char *labels, unsigned imageWidth,
+                                unsigned imageHeight, Point vertex) {
+    int values[COLOR_CHANNELS];
+    int distinct = 0;
+    unsigned colorIndex;
+    values[0] = labelAt(labels, imageWidth, imageHeight, vertex.x - 1, vertex.y - 1);
+    values[1] = labelAt(labels, imageWidth, imageHeight, vertex.x, vertex.y - 1);
+    values[2] = labelAt(labels, imageWidth, imageHeight, vertex.x - 1, vertex.y);
+    values[3] = labelAt(labels, imageWidth, imageHeight, vertex.x, vertex.y);
+    for (colorIndex = 0; colorIndex < COLOR_CHANNELS; colorIndex++) {
+        unsigned previousIndex;
+        for (previousIndex = 0; previousIndex < colorIndex; previousIndex++) {
+            if (values[previousIndex] == values[colorIndex]) {
+                break;
             }
         }
+        distinct += (previousIndex == colorIndex);
     }
+    return distinct;
+}
 
-    /* SIMPLIFY BETWEEN ANCHORS*/
-    /* The explicit stack avoids recursion on detailed image boundaries.*/
-    while (top) {
-        size_t end = stack[--top];
-        size_t begin = stack[--top];
+/** Compare points in stable x-then-y order.
+ * @param point Candidate point.
+ * @param other Point to compare against.
+ * @return Nonzero when point sorts before other.
+ * @author kai
+ */
+static int pointBefore(Point point, Point other) {
+    return point.x < other.x || (point.x == other.x && point.y < other.y);
+}
+
+/** Rotate a contour to its stable shared-boundary anchor and initialise keep flags.
+ * @param contour Contour to rotate in place.
+ * @param labels Palette labels used to detect shared junctions.
+ * @param imageWidth Image width for label lookup.
+ * @param imageHeight Image height for label lookup.
+ * @param keep Receives locked-junction flags.
+ * @param anchorFlags Scratch storage for per-vertex junction flags.
+ * @param scratch Scratch point storage.
+ * @return Number of original contour vertices.
+ * @author kai
+ */
+static size_t rotateContourToAnchor(Points *contour, const unsigned char *labels,
+                                    unsigned imageWidth, unsigned imageHeight, unsigned char *keep,
+                                    size_t *anchorFlags, Point *scratch) {
+    size_t vertexCount = contour->count;
+    size_t anchor = 0;
+    size_t junction = vertexCount;
+    size_t vertexIndex;
+    for (vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) {
+        Point vertex = contour->p[vertexIndex];
+        int distinct = distinctCornerLabels(labels, imageWidth, imageHeight, vertex);
+        if (pointBefore(vertex, contour->p[anchor])) {
+            anchor = vertexIndex;
+        }
+        if (distinct >= 3 &&
+            (junction == vertexCount || pointBefore(vertex, contour->p[junction]))) {
+            junction = vertexIndex;
+        }
+        anchorFlags[vertexIndex] = (size_t)(distinct >= 3);
+    }
+    if (junction != vertexCount) {
+        anchor = junction;
+    }
+    for (vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) {
+        size_t original = (anchor + vertexIndex) % vertexCount;
+        scratch[vertexIndex] = contour->p[original];
+        keep[vertexIndex] = (unsigned char)anchorFlags[original];
+    }
+    memcpy(contour->p, scratch, vertexCount * sizeof(*scratch));
+    return vertexCount;
+}
+
+/** Resolve equal-distance simplification ties by point coordinates.
+ * @param contour Contour containing candidate vertices.
+ * @param candidate Candidate vertex index.
+ * @param chosen Previously selected vertex index.
+ * @return Nonzero when candidate sorts before chosen.
+ * @author kai
+ */
+static int splitPointBefore(const Points *contour, size_t candidate, size_t chosen) {
+    return pointBefore(contour->p[candidate], contour->p[chosen]);
+}
+
+/** Simplify each interval between preserved contour anchors.
+ * @param contour Closed contour with its first point appended at the end.
+ * @param stack Work stack of interval endpoint pairs.
+ * @param top Current number of stack entries.
+ * @param keep Receives selected-vertex flags.
+ * @param tolerance Maximum point-to-segment displacement.
+ * @author kai
+ */
+static void simplifySegments(Points *contour, size_t *stack, size_t *top, unsigned char *keep,
+                             double tolerance) {
+    while (*top) {
+        size_t end = stack[--(*top)];
+        size_t begin = stack[--(*top)];
         size_t chosen = 0;
         double best = tolerance * tolerance;
-        for (i = begin + 1; i < end; i++) {
-            double d = distanceSquared(p->p[i], p->p[begin], p->p[end]);
-
-            /* Break equal-distance ties by coordinates so reversed shared edges simplify*/
-            /* identically.*/
-            if (d > best || (chosen && d == best &&
-                             (p->p[i].x < p->p[chosen].x ||
-                              (p->p[i].x == p->p[chosen].x && p->p[i].y < p->p[chosen].y)))) {
-                best = d;
-                chosen = i;
+        size_t vertexIndex;
+        for (vertexIndex = begin + 1; vertexIndex < end; vertexIndex++) {
+            double distance =
+                distanceSquared(contour->p[vertexIndex], contour->p[begin], contour->p[end]);
+            if (distance > best ||
+                (chosen && distance == best && splitPointBefore(contour, vertexIndex, chosen))) {
+                best = distance;
+                chosen = vertexIndex;
             }
         }
         if (chosen) {
             keep[chosen] = 1;
-            stack[top++] = begin;
-            stack[top++] = chosen;
-            stack[top++] = chosen;
-            stack[top++] = end;
+            stack[(*top)++] = begin;
+            stack[(*top)++] = chosen;
+            stack[(*top)++] = chosen;
+            stack[(*top)++] = end;
         }
     }
+}
+
+/** Commit simplified vertices only when the contour remains nondegenerate and keeps its winding.
+ * @param contour Contour being simplified.
+ * @param keep Selected-vertex flags.
+ * @param scratch Scratch storage for the candidate contour.
+ * @param vertexCount Number of vertices in the original contour.
+ * @return Nonzero when the simplified contour is retained.
+ * @author kai
+ */
+static int retainSameWinding(Points *contour, const unsigned char *keep, Point *scratch,
+                             size_t vertexCount) {
+    size_t count = 0;
+    size_t vertexIndex;
+    double before = 0;
+    double after = 0;
+    for (vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) {
+        before +=
+            ((double)contour->p[vertexIndex].x * contour->p[(vertexIndex + 1) % vertexCount].y) -
+            ((double)contour->p[(vertexIndex + 1) % vertexCount].x * contour->p[vertexIndex].y);
+        if (keep[vertexIndex]) {
+            scratch[count++] = contour->p[vertexIndex];
+        }
+    }
+    for (vertexIndex = 0; vertexIndex < count; vertexIndex++) {
+        after += ((double)scratch[vertexIndex].x * scratch[(vertexIndex + 1) % count].y) -
+                 ((double)scratch[(vertexIndex + 1) % count].x * scratch[vertexIndex].y);
+    }
+    if (count < 3 || before * after <= 0) {
+        contour->count = vertexCount;
+        return 0;
+    }
+    memcpy(contour->p, scratch, count * sizeof(*scratch));
+    contour->count = count;
+    return 1;
+}
+/**
+ * Simplify a closed contour while retaining winding, shared colour anchors, and three vertices.
+ * @param contour Closed contour whose vertices may be removed.
+ * @param tolerance Contour simplification tolerance.
+ * @param labels Neighbouring palette labels used to preserve shared anchors.
+ * @param imageWidth Image width for label lookups.
+ * @param imageHeight Image height for label lookups.
+ * @return Nonzero when simplification completes; zero if scratch allocation fails.
+ * @author kai
+ */
+static int simplify(Points *contour, double tolerance, const unsigned char *labels,
+                    unsigned imageWidth, unsigned imageHeight) {
+    unsigned char *keep;
+    size_t *stack;
+    size_t top = 0;
+    size_t vertexCount = contour->count;
+    Point *scratch;
+    int success = 0;
+
+    /* PREPARE CONTOUR SIMPLIFICATION*/
+    if (vertexCount < MIN_SIMPLIFY_POINTS || tolerance <= 0) {
+        return 1;
+    }
+    keep = calloc(vertexCount + 1, 1);
+    stack = malloc((vertexCount + 1) * 2 * sizeof(*stack));
+    scratch = malloc(vertexCount * sizeof(*scratch));
+    if (!keep || !stack || !scratch) {
+        goto done;
+    }
+    /* Shared boundaries must choose identical anchors in either direction. */
+    rotateContourToAnchor(contour, labels, imageWidth, imageHeight, keep, stack, scratch);
+
+    /* SEED LOCKED SEGMENTS*/
+    /* Retain the closing vertex and split work only between fixed junctions.*/
+    if (!pointAdd(contour, contour->p[0].x, contour->p[0].y)) {
+        goto done;
+    }
+    keep[0] = keep[vertexCount] = 1;
     {
-        /* VALIDATE WINDING BEFORE COMMIT*/
-        /* Keep the original contour if simplification would collapse it or reverse its
-         * orientation.*/
-        size_t count = 0;
-        double before = 0;
-        double after = 0;
-        for (i = 0; i < n; i++) {
-            before +=
-                (double)p->p[i].x * p->p[(i + 1) % n].y - (double)p->p[(i + 1) % n].x * p->p[i].y;
-            if (keep[i]) {
-                scratch[count++] = p->p[i];
+        size_t begin = 0;
+        size_t anchorIndex;
+        for (anchorIndex = 1; anchorIndex <= vertexCount; anchorIndex++) {
+            if (keep[anchorIndex]) {
+                stack[top++] = begin;
+                stack[top++] = anchorIndex;
+                begin = anchorIndex;
             }
         }
-        for (i = 0; i < count; i++) {
-            after += (double)scratch[i].x * scratch[(i + 1) % count].y -
-                     (double)scratch[(i + 1) % count].x * scratch[i].y;
-        }
-        if (count >= 3 && before * after > 0) {
-            memcpy(p->p, scratch, count * sizeof(*scratch));
-            p->count = count;
-        } else {
-            p->count = n;
-        }
     }
-    ok = 1;
+
+    simplifySegments(contour, stack, &top, keep, tolerance);
+    retainSameWinding(contour, keep, scratch, vertexCount);
+    success = 1;
 done:
     /* RELEASE SIMPLIFICATION WORKSPACE*/
     /* One scratch allocation serves both rotation and the candidate contour.*/
     free(keep);
     free(stack);
     free(scratch);
-    return ok;
+    return success;
 }
 
 /* PATH SERIALIZATION*/
@@ -651,47 +827,228 @@ done:
  * Append one closed contour to the corresponding SVG and PDF path buffers.
  * @param svg SVG path buffer receiving the contour.
  * @param pdf PDF path buffer receiving equivalent geometry.
- * @param p Simplified closed contour vertices.
+ * @param contour Simplified closed contour vertices.
  * @return Nonzero when both path buffers accept the contour; zero if an append fails.
  * @author kai
  */
-static int emitContour(RcBuffer *svg, RcBuffer *pdf, const Points *p) {
-    size_t i;
-    char text[96];
+static int emitContour(RcBuffer *svg, RcBuffer *pdf, const Points *contour) {
+    size_t vertexIndex;
+    char text[PATH_FORMAT_CAPACITY];
     int length;
 
     /* OPEN THE CLOSED PATH*/
-    if (p->count < 3) {
+    if (contour->count < 3) {
         return 1;
     }
-    length = snprintf(text, sizeof(text), "M%d %d", p->p[0].x, p->p[0].y);
+    length = snprintf(text, sizeof(text), "M%d %d", contour->p[0].x, contour->p[0].y);
     if (!rcAppend(svg, text, (size_t)length)) {
         return 0;
     }
-    length = snprintf(text, sizeof(text), "%d %d m\n", p->p[0].x, p->p[0].y);
+    length = snprintf(text, sizeof(text), "%d %d m\n", contour->p[0].x, contour->p[0].y);
     if (!rcAppend(pdf, text, (size_t)length)) {
         return 0;
     }
 
     /* SERIALIZE SHARED VERTICES*/
     /* SVG uses compact relative moves; PDF receives equivalent absolute line endpoints.*/
-    for (i = 1; i < p->count; i++) {
-        int dx = p->p[i].x - p->p[i - 1].x;
-        int dy = p->p[i].y - p->p[i - 1].y;
+    for (vertexIndex = 1; vertexIndex < contour->count; vertexIndex++) {
+        int deltaX = contour->p[vertexIndex].x - contour->p[vertexIndex - 1].x;
+        int deltaY = contour->p[vertexIndex].y - contour->p[vertexIndex - 1].y;
         length = snprintf(text, sizeof(text),
-                          dx == 0   ? "v%d"
-                          : dy == 0 ? "h%d"
-                                    : "l%d %d",
-                          dx == 0 ? dy : dx, dy);
+                          deltaX == 0   ? "v%d"
+                          : deltaY == 0 ? "h%d"
+                                        : "l%d %d",
+                          deltaX == 0 ? deltaY : deltaX, deltaY);
         if (!rcAppend(svg, text, (size_t)length)) {
             return 0;
         }
-        length = snprintf(text, sizeof(text), "%d %d l\n", p->p[i].x, p->p[i].y);
+        length = snprintf(text, sizeof(text), "%d %d l\n", contour->p[vertexIndex].x,
+                          contour->p[vertexIndex].y);
         if (!rcAppend(pdf, text, (size_t)length)) {
             return 0;
         }
     }
     return rcAppend(svg, "z", 1) && rcAppend(pdf, "h\n", 2);
+}
+
+/**
+ * Close, simplify, and serialize one completed contour.
+ * @param context Image, label, palette, and output workspace.
+ * @param start Region colour for the contour.
+ * @param points Completed contour vertices.
+ * @return Nonzero when simplification and output serialization succeed.
+ * @author kai
+ */
+static int storeTraceContour(const TraceContext *context, EdgeStart start, Points *points) {
+    if (points->count > 1 && points->p[points->count - 1].x == points->p[0].x &&
+        points->p[points->count - 1].y == points->p[0].y) {
+        points->count--;
+    }
+    return simplify(points, context->tolerance, context->labels, context->image->width,
+                    context->image->height) &&
+           emitContour(&context->paths[start.color].svg, &context->paths[start.color].pdf, points);
+}
+
+/**
+ * Trace, simplify, and serialize one boundary contour.
+ * @param context Image, label, palette, and visited-edge workspace.
+ * @param start Region colour and directed contour start.
+ * @param points Reusable contour point storage.
+ * @return Nonzero when the start is not a boundary or its contour is serialized successfully.
+ * @author kai
+ */
+static int traceContour(const TraceContext *context, EdgeStart start, Points *points) {
+    int currentX = start.x;
+    int currentY = start.y;
+    unsigned direction = start.direction;
+    size_t cell;
+    size_t steps = 0;
+    if (!edge(context->labels, context->image->width, context->image->height,
+              (EdgeQuery){{start.x, start.y}, start.direction, (int)start.color}, &cell)) {
+        return 1;
+    }
+    if (cell >= context->total) {
+        return 0;
+    }
+    if ((context->visited[cell] & (1U << start.direction)) != 0) {
+        return 1;
+    }
+    points->count = 0;
+    if (!pointAdd(points, start.x, start.y)) {
+        return 0;
+    }
+    do {
+        static const unsigned turns[EDGE_DIRECTION_COUNT] = {1, 0, 3, 2};
+        unsigned next = 0;
+        unsigned turnIndex;
+        size_t nextCell = 0;
+        if (cell >= context->total || (context->visited[cell] & (1U << direction)) != 0) {
+            return 0;
+        }
+        context->visited[cell] |= 1U << direction;
+        currentX += stepX[direction];
+        currentY += stepY[direction];
+        for (turnIndex = 0; turnIndex < EDGE_DIRECTION_COUNT; turnIndex++) {
+            next = (direction + turns[turnIndex]) % EDGE_DIRECTION_COUNT;
+            if (edge(context->labels, context->image->width, context->image->height,
+                     (EdgeQuery){{currentX, currentY}, next, (int)start.color}, &nextCell)) {
+                if (nextCell >= context->total) {
+                    return 0;
+                }
+                break;
+            }
+        }
+        if (turnIndex == EDGE_DIRECTION_COUNT || ++steps > context->total * EDGE_DIRECTION_COUNT) {
+            return 0;
+        }
+        if (next != direction && !pointAdd(points, currentX, currentY)) {
+            return 0;
+        }
+        direction = next;
+        cell = nextCell;
+    } while (currentX != start.x || currentY != start.y || direction != start.direction);
+
+    return storeTraceContour(context, start, points);
+}
+
+/**
+ * Trace every visible palette region into per-colour contour paths.
+ * @param context Image, label, palette, and visited-edge workspace.
+ * @param points Reusable contour point storage.
+ * @return Nonzero when all visible boundaries are serialized.
+ * @author kai
+ */
+static int traceVectorContours(const TraceContext *context, Points *points) {
+    unsigned pixelX;
+    unsigned pixelY;
+    for (pixelY = 0; pixelY < context->image->height; pixelY++) {
+        for (pixelX = 0; pixelX < context->image->width; pixelX++) {
+            unsigned color = context->labels[((size_t)pixelY * context->image->width) + pixelX];
+            unsigned direction;
+            if (color >= context->paletteCount) {
+                return 0;
+            }
+            if (!context->palette[color][ALPHA_CHANNEL]) {
+                continue;
+            }
+            for (direction = 0; direction < EDGE_DIRECTION_COUNT; direction++) {
+                EdgeStart start = {
+                    (int)pixelX + (direction == 1 || direction == 2),
+                    (int)pixelY + (direction >= 2),
+                    direction,
+                    color,
+                };
+                if (!traceContour(context, start, points)) {
+                    return 0;
+                }
+            }
+        }
+    }
+    return 1;
+}
+
+/**
+ * Serialize the SVG/PDF headers and all visible palette layers.
+ * @param context Image dimensions, palette paths, and output buffers.
+ * @return Nonzero when both output formats accept all content.
+ * @author kai
+ */
+static int writeVectorDocument(VectorOutputContext *context) {
+    int textLength;
+    unsigned paletteIndex;
+    textLength = snprintf(context->text, context->capacity,
+                          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%u\" height=\"%u\" "
+                          "viewBox=\"0 0 %u %u\">\textLength",
+                          context->image->width, context->image->height, context->image->width,
+                          context->image->height);
+    if (!rcAppend(&context->out->svg, context->text, (size_t)textLength)) {
+        return 0;
+    }
+    textLength =
+        snprintf(context->text, context->capacity, "q\textLength%.12g 0 0 %.12g 0 1 cm\textLength",
+                 1.0 / context->image->width, -1.0 / context->image->height);
+    if (!rcAppend(&context->out->pdf, context->text, (size_t)textLength) ||
+        !rcAppend(&context->out->resources, "/ExtGState <<\textLength",
+                  sizeof("/ExtGState <<\textLength") - 1)) {
+        return 0;
+    }
+
+    for (paletteIndex = 0; paletteIndex < context->count; paletteIndex++) {
+        if (!context->paths[paletteIndex].svg.size) {
+            continue;
+        }
+        textLength = snprintf(context->text, context->capacity,
+                              "<path fill=\"#%02x%02x%02x\" fill-opacity=\"%.6f\" "
+                              "fill-rule=\"evenodd\" directionIndex=\"",
+                              context->palette[paletteIndex][0], context->palette[paletteIndex][1],
+                              context->palette[paletteIndex][2],
+                              context->palette[paletteIndex][3] / (double)COLOR_CHANNEL_MAX);
+        if (!rcAppend(&context->out->svg, context->text, (size_t)textLength) ||
+            !rcAppend(&context->out->svg, context->paths[paletteIndex].svg.data,
+                      context->paths[paletteIndex].svg.size) ||
+            !rcAppend(&context->out->svg, "\"/>\textLength", 4)) {
+            return 0;
+        }
+
+        textLength =
+            snprintf(context->text, context->capacity, "%.6f %.6f %.6f rg /A%u gs\textLength",
+                     context->palette[paletteIndex][0] / (double)COLOR_CHANNEL_MAX,
+                     context->palette[paletteIndex][1] / (double)COLOR_CHANNEL_MAX,
+                     context->palette[paletteIndex][2] / (double)COLOR_CHANNEL_MAX, paletteIndex);
+        if (!rcAppend(&context->out->pdf, context->text, (size_t)textLength) ||
+            !rcAppend(&context->out->pdf, context->paths[paletteIndex].pdf.data,
+                      context->paths[paletteIndex].pdf.size) ||
+            !rcAppend(&context->out->pdf, "f*\textLength", 3)) {
+            return 0;
+        }
+        textLength = snprintf(context->text, context->capacity,
+                              "/A%u << /Type /ExtGState /ca %.6f >>\textLength", paletteIndex,
+                              context->palette[paletteIndex][3] / (double)COLOR_CHANNEL_MAX);
+        if (!rcAppend(&context->out->resources, context->text, (size_t)textLength)) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 /*//////////////////////////////////////////////////
@@ -701,211 +1058,89 @@ API
 /* BUFFER OWNERSHIP*/
 /**
  * Release SVG and PDF path buffers owned by a vector result.
- * @param v Vector result whose owned buffers are released and cleared.
+ * @param vector Vector result whose owned buffers are released and cleared.
  * @author kai
  */
-void rcFreeVector(RcVector *v) {
-    free(v->svg.data);
-    free(v->pdf.data);
-    free(v->resources.data);
-    memset(v, 0, sizeof(*v));
+void rcFreeVector(RcVector *vector) {
+    free(vector->svg.data);
+    free(vector->pdf.data);
+    free(vector->resources.data);
+    memset(vector, 0, sizeof(*vector));
 }
 
 /* REGION OUTPUT*/
 /**
  * Quantize RGBA pixels and trace connected palette regions into shared SVG/PDF paths.
- * @param im Decoded RGBA source image.
- * @param colors Palette size, limited to 2 through 256.
- * @param tolerance Maximum contour displacement in pixels.
+ * @param image Decoded RGBA source image.
+ * @param options Palette size and maximum contour displacement.
  * @param out Receives SVG/PDF geometry and palette metadata.
  * @return 1 with owned output buffers; 0 after releasing incomplete geometry.
  * @author kai
  */
-int rcVectorize(const RcImage *im, unsigned colors, double tolerance, RcVector *out) {
-    unsigned char palette[256][4];
+int rcVectorize(const RcImage *image, RcVectorOptions options, RcVector *out) {
+    unsigned char palette[MAX_PALETTE_COLORS][COLOR_CHANNELS];
     unsigned char *labels = NULL;
-    unsigned char *visited = NULL;
+    unsigned int *visited = NULL;
     Paths *paths = NULL;
     Points points = {0};
+    TraceContext context;
+    VectorOutputContext outputContext;
     unsigned count = 0;
-    unsigned x;
-    unsigned y;
-    unsigned k;
-    size_t total = (size_t)im->width * im->height;
-    int ok = 0;
-    char text[256];
-    int n;
+    unsigned paletteIndex;
+    size_t total;
+    int success = 0;
+    char text[VECTOR_TEXT_BUFFER_CAPACITY];
 
     /* PREPARE REGION WORKSPACE*/
     /* A visited bit belongs to one directed side of one pixel, not to the whole region.*/
-    memset(out, 0, sizeof(*out));
-    if (colors < 2 || colors > 256 || !paletteImage(im, colors, palette, &count, &labels)) {
+    if (!image || !out || !image->rgba || !image->width || !image->height) {
         return 0;
     }
-    visited = calloc(total, 1);
+    total = (size_t)image->width * image->height;
+    if (total > SIZE_MAX / EDGE_DIRECTION_COUNT) {
+        return 0;
+    }
+    memset(out, 0, sizeof(*out));
+    if (options.colors < MIN_PALETTE_COLORS || options.colors > MAX_PALETTE_COLORS ||
+        !paletteImage(image, options.colors, palette, &count, &labels)) {
+        return 0;
+    }
+    /* Reserve a bounded guard band for analyzer paths; runtime checks still reject invalid cells.
+     */
+    visited = calloc(total + EDGE_DIRECTION_COUNT, sizeof(*visited));
     paths = calloc(count, sizeof(*paths));
     if (!visited || !paths) {
         goto done;
     }
-
-    /* DISCOVER REGION BOUNDARIES*/
-    /* Walk each boundary with its region on the right; transparent labels are skipped.*/
-    for (y = 0; y < im->height; y++) {
-        for (x = 0; x < im->width; x++) {
-            unsigned color = labels[(size_t)y * im->width + x];
-            unsigned d;
-
-            /* Transparent regions remain empty rather than being flattened onto a background.*/
-            if (!palette[color][3]) {
-                continue;
-            }
-            for (d = 0; d < 4; d++) {
-                int sx = (int)x + (d == 1 || d == 2);
-                int sy = (int)y + (d >= 2);
-                int cx = sx;
-                int cy = sy;
-                unsigned direction = d;
-                size_t cell;
-                size_t steps = 0;
-                points.count = 0;
-
-                /* START AN UNVISITED CONTOUR*/
-                /* Start only on an unvisited side separating different labels.*/
-                if (!edge(labels, im->width, im->height, sx, sy, d, (int)color, &cell) ||
-                    (visited[cell] & (1U << d))) {
-                    continue;
-                }
-                if (!pointAdd(&points, sx, sy)) {
-                    goto done;
-                }
-                do {
-                    static const unsigned turns[4] = {1, 0, 3, 2};
-                    unsigned next;
-                    unsigned i;
-                    size_t nextCell;
-
-                    /* ADVANCE THE BOUNDARY*/
-                    /* Reject a repeated directed edge before moving to its endpoint.*/
-                    if (visited[cell] & (1U << direction)) {
-                        goto done;
-                    }
-
-                    /* Direction order is east, south, west, north.*/
-                    visited[cell] |= (unsigned char)(1U << direction);
-                    cx += stepX[direction];
-                    cy += stepY[direction];
-
-                    /* CHOOSE THE NEXT EDGE*/
-                    /* Right-first turns keep diagonal contacts in separate contours.*/
-                    for (i = 0; i < 4; i++) {
-                        next = (direction + turns[i]) % 4;
-                        if (edge(labels, im->width, im->height, cx, cy, next, (int)color,
-                                 &nextCell)) {
-                            break;
-                        }
-                    }
-
-                    /* BOUND THE WALK*/
-                    /* A contour cannot visit more than four sides per pixel.*/
-                    if (i == 4 || ++steps > total * 4) {
-                        goto done;
-                    }
-
-                    /* RECORD CORNERS*/
-                    /* Record turns only; straight runs need no intermediate vertices.*/
-                    if (next != direction && !pointAdd(&points, cx, cy)) {
-                        goto done;
-                    }
-                    direction = next;
-                    cell = nextCell;
-                } while (cx != sx || cy != sy || direction != d);
-
-                /* CLOSE AND STORE THE CONTOUR*/
-                /* Drop the duplicate endpoint; share simplified vertices across formats.*/
-                if (points.count > 1 && points.p[points.count - 1].x == points.p[0].x &&
-                    points.p[points.count - 1].y == points.p[0].y) {
-                    points.count--;
-                }
-                if (!simplify(&points, tolerance, labels, im->width, im->height) ||
-                    !emitContour(&paths[color].svg, &paths[color].pdf, &points)) {
-                    goto done;
-                }
-            }
-        }
-    }
-
-    /* BEGIN VECTOR DOCUMENTS*/
-    /* SVG keeps pixel coordinates; the PDF transform maps the same paths into unit image space.*/
-    n = snprintf(text, sizeof(text),
-                 "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%u\" height=\"%u\" viewBox=\"0 "
-                 "0 %u %u\">\n",
-                 im->width, im->height, im->width, im->height);
-    if (!rcAppend(&out->svg, text, (size_t)n)) {
-        goto done;
-    }
-    n = snprintf(text, sizeof(text), "q\n%.12g 0 0 %.12g 0 1 cm\n", 1.0 / im->width,
-                 -1.0 / im->height);
-    if (!rcAppend(&out->pdf, text, (size_t)n) ||
-        !rcAppend(&out->resources, "/ExtGState <<\n", 14)) {
+    context =
+        (TraceContext){image, labels, palette, visited, paths, count, total, options.tolerance};
+    if (!traceVectorContours(&context, &points)) {
         goto done;
     }
 
-    /* PAINT PALETTE REGIONS*/
-    for (k = 0; k < count; k++) {
-        if (!paths[k].svg.size) {
-            continue;
-        }
-
-        /* SVG COLOUR AND GEOMETRY*/
-        /* Even-odd filling preserves holes independently of winding.*/
-        n = snprintf(
-            text, sizeof(text),
-            "<path fill=\"#%02x%02x%02x\" fill-opacity=\"%.6f\" fill-rule=\"evenodd\" d=\"",
-            palette[k][0], palette[k][1], palette[k][2], palette[k][3] / 255.0);
-        if (!rcAppend(&out->svg, text, (size_t)n) ||
-            !rcAppend(&out->svg, paths[k].svg.data, paths[k].svg.size) ||
-            !rcAppend(&out->svg, "\"/>\n", 4)) {
-            goto done;
-        }
-
-        /* PDF COLOUR AND OPACITY*/
-        /* Each colour uses its own graphics state so transparency survives conversion.*/
-        n = snprintf(text, sizeof(text), "%.6f %.6f %.6f rg /A%u gs\n", palette[k][0] / 255.0,
-                     palette[k][1] / 255.0, palette[k][2] / 255.0, k);
-        if (!rcAppend(&out->pdf, text, (size_t)n) ||
-            !rcAppend(&out->pdf, paths[k].pdf.data, paths[k].pdf.size) ||
-            !rcAppend(&out->pdf, "f*\n", 3)) {
-            goto done;
-        }
-        n = snprintf(text, sizeof(text), "/A%u << /Type /ExtGState /ca %.6f >>\n", k,
-                     palette[k][3] / 255.0);
-        if (!rcAppend(&out->resources, text, (size_t)n)) {
-            goto done;
-        }
-    }
-
-    /* FINALISE OUTPUT DOCUMENTS*/
-    if (!rcAppend(&out->resources, ">>\n", 3) || !rcAppend(&out->svg, "</svg>\n", 7) ||
-        !rcAppend(&out->pdf, "Q\n", 2)) {
+    outputContext = (VectorOutputContext){image, palette, paths, count, out, text, sizeof(text)};
+    if (!writeVectorDocument(&outputContext) || !rcAppend(&out->resources, ">>\textLength", 3) ||
+        !rcAppend(&out->svg, "</svg>\textLength", sizeof("</svg>\textLength") - 1) ||
+        !rcAppend(&out->pdf, "Q\textLength", sizeof("Q\textLength") - 1)) {
         goto done;
     }
     out->colors = count;
-    ok = 1;
+    success = 1;
 done:
     /* RELEASE TEMPORARY CONTOURS*/
     /* Only complete output buffers remain owned by the caller on success.*/
     if (paths) {
-        for (k = 0; k < count; k++) {
-            free(paths[k].svg.data);
-            free(paths[k].pdf.data);
+        for (paletteIndex = 0; paletteIndex < count; paletteIndex++) {
+            free(paths[paletteIndex].svg.data);
+            free(paths[paletteIndex].pdf.data);
         }
     }
     free(paths);
     free(labels);
     free(visited);
     free(points.p);
-    if (!ok) {
+    if (!success) {
         rcFreeVector(out);
     }
-    return ok;
+    return success;
 }

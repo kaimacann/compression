@@ -69,12 +69,12 @@ API
 /**
  * Append bytes within the processing memory limit.
  * @param buffer Destination buffer.
- * @param data Bytes to append.
+ * @param source Bytes to append.
  * @param length Number of bytes to append.
  * @return Nonzero on success.
  * @author kai
  */
-int rcAppend(RcBuffer *buffer, const void *data, size_t length);
+int rcAppend(RcBuffer *buffer, const void *source, size_t length);
 /**
  * Decode PNG or JPEG identified by its signature.
  * @param data Encoded source bytes.
@@ -87,13 +87,13 @@ int rcDecode(const unsigned char *data, size_t length, RcImage *image);
 /**
  * Decode baseline or progressive JPEG pixels.
  * @param data Encoded JPEG bytes.
- * @param length Source length.
+ * @param n Source length.
  * @param image Receives owned RGBA pixels on success.
  * @param orient Apply EXIF orientation when nonzero.
  * @return Nonzero on success.
  * @author kai
  */
-int rcJpeg(const unsigned char *data, size_t length, RcImage *image, int orient);
+int rcJpeg(const unsigned char *data, size_t n, RcImage *image, int orient);
 /**
  * Inflate and validate a zlib-wrapped DEFLATE stream.
  * @param data Compressed zlib bytes.
@@ -117,23 +117,26 @@ int rcDeflate(const unsigned char *data, size_t length, RcBuffer *output);
  * Extract one legal 1/2/4/8/16-bit sample from a packed row.
  * @param row Packed samples.
  * @param sample Zero-based sample index.
- * @param bits Bits per sample.
+ * @param depth Bits per sample.
  * @return The sample value.
  * @author kai
  */
-unsigned rcSample(const unsigned char *row, size_t sample, unsigned bits);
+unsigned rcSample(const unsigned char *row, size_t sample, unsigned depth);
+/** Parameters for reversing one PNG or PDF row filter. */
+typedef struct {
+    size_t length;        /**< Row length in bytes. */
+    size_t bytesPerPixel; /**< Bytes per pixel in the row. */
+    unsigned filter;      /**< Filter selector from zero through four. */
+} RcUnfilterOptions;
 /**
  * Reverse a PNG or PDF row filter; NULL prior supplies zero neighbours.
  * @param row Encoded row, replaced by decoded samples.
  * @param prior Previous decoded row, or NULL for the first row.
- * @param length Row length in bytes.
- * @param bpp Bytes per pixel.
- * @param filter Filter type from zero through four.
+ * @param options Row length, bytes per pixel, and filter type.
  * @return Nonzero for a supported filter.
  * @author kai
  */
-int rcUnfilter(unsigned char *row, const unsigned char *prior, size_t length, size_t bpp,
-               unsigned filter);
+int rcUnfilter(unsigned char *row, const unsigned char *prior, RcUnfilterOptions options);
 /**
  * Calculate the CRC-32 used by PNG chunks.
  * @param data Source bytes.
