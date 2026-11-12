@@ -5,7 +5,7 @@ description: Assessment information and a practical guide to the compression rep
 
 # Compression project
 
-This documentation has two sections. **Assessment** contains the assignment material and separate project proposals. **Compression** is the multipage guide to installing, running, and understanding the repository demo.
+This documentation has two sections. Use the links below to jump to the relevant section. **Assessment** contains the assignment material and separate project proposals. **Compression** is the multipage guide to installing, running, and understanding the repository demo.
 
 <table>
   <thead>
