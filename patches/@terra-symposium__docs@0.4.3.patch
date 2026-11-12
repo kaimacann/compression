@@ -1,0 +1,39 @@
+diff --git a/dist/lib/components/terra/editor/_blocks.js b/dist/lib/components/terra/editor/_blocks.js
+index 9a583371b9045d0375c38b42a9356dffbb736153..079b4dbfaf2382959f0d7bb4c84e7b6611442dc3 100644
+--- a/dist/lib/components/terra/editor/_blocks.js
++++ b/dist/lib/components/terra/editor/_blocks.js
+@@ -108,6 +108,9 @@ COMPONENTS
+  * @return The tab list and controls for selecting, renaming, deleting, or adding editor tabs.
+  */
+ export function EditorTabsList({ tabs, value: a, onRename, onDelete, onAdd, }) {
++    if (!onRename && !onDelete && !onAdd) {
++        return (_jsx(ErrorBoundary, { name: "EditorTabsList", children: _jsx(TabsList, { className: "mb-0 inline-flex w-full items-center justify-start gap-0 overflow-x-auto", children: tabs.map((t) => (_jsx(TabsTrigger, { value: t.value, variant: "gray-tonal", selection: "surface", className: "group flex min-w-32 items-center gap-1 border-none px-2 py-1 font-bold", children: _jsx("strong", { className: "px-1 text-sm font-bold", children: t.title || t.fallback || 'Untitled' }) }, t.value))) }) }));
++    }
+     return (_jsx(ErrorBoundary, { name: "EditorTabsList", children: _jsxs(TabsList, { className: "mb-0 inline-flex w-full items-center justify-start gap-0 overflow-x-auto", children: [tabs.map((t) => (_jsx(TabsTrigger, { value: t.value, asChild: true, children: _jsxs("div", { className: cn('group flex min-w-32 items-center gap-1 border-none px-2 py-1 font-bold', t.value === a && 'bg-primary-3'), children: [onRename ? (_jsx(Input, { value: t.title || t.fallback || 'Untitled', onChange: (e) => {
+                                     onRename(t.value, e.target.value);
+                                 }, onClick: (e) => {
+diff --git a/dist/lib/lib/markdown-model.js b/dist/lib/lib/markdown-model.js
+index c131080ac4b90643fe66ddd9c4d6c2d50be772a2..93275029d0f318cfe91c5f6584c36daac752c2da 100644
+--- a/dist/lib/lib/markdown-model.js
++++ b/dist/lib/lib/markdown-model.js
+@@ -1261,8 +1261,18 @@ function parseMarkdown(markdown, options, blocks) {
+         const marker = token.raw.trim().match(/^DOCSBLOCK(\d+)PLACEHOLDER$/);
+         if (marker) {
+             const block = blocks[Number(marker[1])];
+-            if (block)
+-                result.push(block);
++            if (block) {
++                const previous = result.at(-1);
++                if ((block._type === 'accordion' || block._type === 'tabs') &&
++                    previous?._type === block._type &&
++                    Array.isArray(previous.items) &&
++                    Array.isArray(block.items)) {
++                    previous.items.push(...block.items);
++                }
++                else {
++                    result.push(block);
++                }
++            }
+             continue;
+         }
+         if (token.type === 'heading') {

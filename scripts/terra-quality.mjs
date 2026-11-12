@@ -1,4 +1,15 @@
-import { fileURLToPath } from 'node:url';
-import { runQualityFromCfg } from '@terra-symposium/standards-quality/cli';
+/**
+ * scripts/terra-quality.mjs
+ */
 
-await runQualityFromCfg(fileURLToPath(new URL('../config/quality.json', import.meta.url)), process.argv.slice(2));
+/*//////////////////////////////////////////////////
+IMPORTS
+//////////////////////////////////////////////////*/
+
+// API
+import { fileURLToPath } from "node:url";
+import { runQualityFromCfg } from "@terra-symposium/standards-quality/cli";
+await runQualityFromCfg(
+  fileURLToPath(new URL("../config/quality.json", import.meta.url)),
+  process.argv.slice(2),
+);

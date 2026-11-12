@@ -1,40 +1,67 @@
+/**
+ * scripts/check-doc-params.mjs
+ */
+
+/*//////////////////////////////////////////////////
+IMPORTS
+//////////////////////////////////////////////////*/
+
+// API
 import { readFile, readdir } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 
+/*//////////////////////////////////////////////////
+REGEX
+//////////////////////////////////////////////////*/
+
+const S_REGEX = /\s/;
+const W_S_REGEX = /^[\w\s*]+$/;
 const root = resolve(import.meta.dirname, "..");
 const sources = [];
 
-/** Collect C translation units whose function contracts belong to this repository.
- * @param {string} directory Directory to inspect recursively.
- * @returns {Promise<void>} Resolves after every nested C source and header path is recorded.
+/**
+ * Collect C translation units whose function contracts belong to this repository.
+ *
+ * @param {string} dir Directory containing the source entries to inspect recursively.
+ *
+ * @return {Promise<void>} Resolves after every nested C source and header path is recorded.
+ *
  * @author haadi
  */
-async function collect(directory) {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = resolve(directory, entry.name);
+async function collect(dir) {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = resolve(dir, entry.name);
     if (entry.isDirectory()) await collect(path);
     else if (/\.[ch]$/.test(entry.name)) sources.push(path);
   }
 }
 
-/** Replace comments and literals with spaces while retaining source offsets and lines.
+/**
+ * Replace comments and literals with spaces while retaining source offsets and lines.
+ *
  * @param {string} source C source text to scan.
- * @returns {string} Same-length text with non-code characters blanked out.
+ *
+ * @return {string} Same-length text with non-code characters blanked out.
+ *
  * @author haadi
  */
 function mask(source) {
   return source.replace(
     /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g,
-    (part) => part.replace(/[^\n]/g, " "),
+    (p) => p.replace(/[^\n]/g, " "),
   );
 }
 
-/** Find the matching closing delimiter while respecting nested delimiters.
+/**
+ * Find the matching closing delimiter while respecting nested delimiters.
+ *
  * @param {string} text Source text containing the opening delimiter.
  * @param {number} start Offset of the opening delimiter.
  * @param {string} open Opening delimiter to balance.
  * @param {string} close Closing delimiter to balance.
- * @returns {number} Closing delimiter offset, or -1 when the pair is incomplete.
+ *
+ * @return {number} Closing delimiter offset, or -1 when the pair is incomplete.
+ *
  * @author haadi
  */
 function matching(text, start, open = "(", close = ")") {
@@ -46,9 +73,13 @@ function matching(text, start, open = "(", close = ")") {
   return -1;
 }
 
-/** Extract parameter identifiers from a C parameter list, including function pointers.
+/**
+ * Extract parameter identifiers from a C parameter list, including function pointers.
+ *
  * @param {string} text Text between a function declarator's parentheses.
- * @returns {string[]} Parameter names in signature order; a void list is empty.
+ *
+ * @return {string[]} Parameter names in signature order; a void list is empty.
+ *
  * @author haadi
  */
 function parameters(text) {
@@ -76,10 +107,9 @@ function parameters(text) {
   }
   return parts;
 }
-
 await collect(resolve(root, "src/c"));
 let warnings = 0;
-let functions = 0;
+let fns = 0;
 const checkedByFile = new Map();
 for (const path of sources.sort()) {
   const source = await readFile(path, "utf8");
@@ -92,19 +122,19 @@ for (const path of sources.sort()) {
       const id = code.slice(i).match(/^[A-Za-z_]\w*/)[0];
       const afterName = i + id.length;
       let open = afterName;
-      while (/\s/.test(code[open] ?? "")) open++;
+      while (S_REGEX.test(code[open] ?? "")) open++;
       if (
         code[open] === "(" &&
         !["if", "for", "while", "switch", "sizeof", "return"].includes(id)
       ) {
         const end = matching(code, open);
         let after = end + 1;
-        while (/\s/.test(code[after] ?? "")) after++;
+        while (S_REGEX.test(code[after] ?? "")) after++;
         const prefix = code.slice(start, i).trim();
         if (
           end > 0 &&
           (code[after] === "{" || code[after] === ";") &&
-          /^[\w\s*]+$/.test(prefix) &&
+          W_S_REGEX.test(prefix) &&
           /[A-Za-z_]\w*/.test(prefix)
         ) {
           {
@@ -115,7 +145,7 @@ for (const path of sources.sort()) {
             const between = last
               ? code.slice(last.index + last[0].length, i).trim()
               : "";
-            const doc = last && /^[\w\s*]+$/.test(between) ? last[1] : "";
+            const doc = last && W_S_REGEX.test(between) ? last[1] : "";
             const args = parameters(code.slice(open + 1, end));
             const line = source.slice(0, i).split("\n").length;
             const file = relative(root, path);
@@ -125,37 +155,39 @@ for (const path of sources.sort()) {
               : /src\/c\/(encryption|login)\//.test(file)
                 ? "marceline"
                 : "haadi";
+            /**
+             * Report one contract issue at the current declaration and update the total.
+             *
+             * @param {string} message Short description of the documentation issue.
+             */
             const report = (message) => {
               console.warn(`${location}: ${message}`);
               warnings++;
             };
-            functions++;
+            fns++;
             checkedByFile.set(file, (checkedByFile.get(file) ?? 0) + 1);
             if (!doc) {
               report("missing TSDoc");
             } else {
               const summary = doc
                 .split("\n")
-                .map((row) => row.replace(/^\s*\*?\s?/, "").trim())
-                .find((row) => row && !row.startsWith("@"));
+                .map((r) => r.replace(/^\s*\*?\s?/, "").trim())
+                .find((r) => r && !r.startsWith("@"));
               if (!summary) report("missing summary");
               const parameterTags = [
                 ...doc.matchAll(/@param(?:\[[^\]]+\])?\s+(\w+)/g),
               ];
-              const documentedOrder = parameterTags.map((match) => match[1]);
+              const documentedOrder = parameterTags.map((m) => m[1]);
               const documented = new Set(documentedOrder);
-              for (const name of args.filter((name) => !documented.has(name)))
+              for (const name of args.filter((n) => !documented.has(n)))
                 report(`missing @param ${name}`);
               for (const name of [...documented].filter(
-                (name) => !args.includes(name),
+                (n) => !args.includes(n),
               ))
                 report(`stale @param ${name}`);
-              if (
-                args.length &&
-                args.some((name, index) => documentedOrder[index] !== name)
-              )
+              if (args.length && args.some((n, i) => documentedOrder[i] !== n))
                 report(`@param order should be ${args.join(", ")}`);
-              for (const name of args.filter((name) => documented.has(name))) {
+              for (const name of args.filter((n) => documented.has(n))) {
                 if (
                   !new RegExp(
                     `@param(?:\\[[^\\]]+\\])?\\s+${name}\\s+\\S`,
@@ -166,8 +198,7 @@ for (const path of sources.sort()) {
               const resultType = prefix
                 .replace(/\b(static|extern|inline|_Noreturn)\b/g, "")
                 .trim();
-              const nonVoid = !/^void$/.test(resultType);
-              if (nonVoid && !/@returns?\s+\S/.test(doc))
+              if (!/^void$/.test(resultType) && !/@returns?\s+\S/.test(doc))
                 report("missing @return description");
               if (!new RegExp(`@author\\s+${author}\\b`, "i").test(doc))
                 report(`expected @author ${author}`);
@@ -200,7 +231,7 @@ for (const [file, count] of checkedByFile)
   );
 console.log(
   warnings
-    ? `Found ${warnings} documentation issue(s) across ${functions} C declarations and definitions.`
-    : `All ${functions} C declarations and definitions have summaries, parameter and return contracts, and the expected author.`,
+    ? `Found ${warnings} documentation issue(s) across ${fns} C declarations and definitions.`
+    : `All ${fns} C declarations and definitions have summaries, parameter and return contracts, and the expected author.`,
 );
 if (warnings) process.exitCode = 1;

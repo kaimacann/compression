@@ -10,20 +10,25 @@
   },
   "scripts": {
     "docs": "docs dev --port 3010",
-    "docs:doxygen": "doxygen config/Doxyfile",
-    "build": "make && docs build --out dist/docs",
+    "docs:doxygen": "node scripts/run-native-tool.mjs doxygen config/Doxyfile",
+    "build": "node scripts/run-native-tool.mjs make && docs build --out dist/docs",
     "quality": "node scripts/terra-quality.mjs",
-    "format:c": "make format-c",
-    "format:c:check": "make format-c-check",
+    "changeset": "changeset",
+    "format:c": "node scripts/run-native-tool.mjs make format-c",
+    "format:c:check": "node scripts/run-native-tool.mjs make format-c-check",
+    "test": "node --test scripts/run-native-tool.test.mjs && make test-media-output && make test-archive-roundtrip && make test-codec-primitives && make test-vector-transform && make test-media-jpeg-io",
     "format": "prettier --write README.md 'docs/**/*.{md,mdx}' '!docs/assessment/assignment/brief.md'",
     "prepare": "husky"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
-    "@terra-symposium/docs": "^0.4.3",
-    "@terra-symposium/standards-quality": "2.1.0",
-    "astro": "^7.4.4",
+    "@eslint/js": "^10.0.1",
+    "@terra-symposium/docs": "^0.4.14",
+    "@terra-symposium/standards-quality": "2.2.0",
+    "eslint": "^10.13.0",
+    "globals": "^16.5.0",
     "husky": "^9.1.7",
+    "knip": "^6.44.1",
     "prettier": "^3.9.10"
   }
 }

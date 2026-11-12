@@ -403,7 +403,8 @@ static int simplify(Points *p, double tolerance, const unsigned char *labels, un
     }
     {
         /* VALIDATE WINDING BEFORE COMMIT*/
-        /* Keep the original contour if simplification would collapse it or reverse its orientation.*/
+        /* Keep the original contour if simplification would collapse it or reverse its
+         * orientation.*/
         size_t count = 0;
         double before = 0, after = 0;
         for (i = 0; i < n; i++) {

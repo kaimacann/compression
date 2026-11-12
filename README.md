@@ -4,7 +4,7 @@ Assessment material and a practical guide to the C compression repository. Canva
 
 ## Start here
 
-Requirements: Node.js, pnpm 10.30.3, a C11 compiler available as `cc`, and Make. Run these commands from the repository root:
+Requirements: Node.js, pnpm 10.30.3, a C11 compiler available as `cc`, and Make. Install Doxygen to generate the C API reference; `clang-format` is needed only for the C formatting commands. Use your operating system's package manager for these system tools. Run these commands from the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -38,6 +38,7 @@ The Makefile builds one executable from `src/c/main`, `src/c/compression`, `src/
 | `pnpm run format`         | Format the README and editable Docs Markdown in place; the verbatim assessment brief is excluded. |
 | `pnpm run format:c`       | Run `make format-c`.                                                                              |
 | `pnpm run format:c:check` | Run `make format-c-check`.                                                                        |
+| `pnpm test`               | Check the native-tool wrapper's argument, status, and missing-tool handling.                      |
 | `pnpm run docs:doxygen`   | Generate the C API reference under `dist/doxygen`; requires Doxygen.                              |
 
 ## Project material
