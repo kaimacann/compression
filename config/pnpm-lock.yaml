@@ -20,6 +20,9 @@ importers:
       '@terra-symposium/standards-quality':
         specifier: 2.2.0
         version: 2.2.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      astro:
+        specifier: ^7.4.4
+        version: 7.4.4(@astrojs/markdown-remark@7.3.5)(@types/node@24.19.2)(esbuild@0.28.2)(jiti@1.21.7)(yaml@2.9.1)
       eslint:
         specifier: ^10.13.0
         version: 10.14.0(jiti@1.21.7)
