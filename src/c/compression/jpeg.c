@@ -440,7 +440,8 @@ static int scan(Jpeg *j, const unsigned char *p, size_t n) {
     }
 
     /* VALIDATE SPECTRAL PROGRESSION*/
-    /* Refinement scans must follow the previous approximation level for every selected coefficient.*/
+    /* Refinement scans must follow the previous approximation level for every selected
+     * coefficient.*/
     ss = p[1 + ns * 2];
     se = p[2 + ns * 2];
     ah = p[3 + ns * 2] >> 4;
@@ -570,7 +571,8 @@ static int render(Jpeg *j, RcImage *im) {
                     }
 
                 /* HANDLE CONSTANT BLOCKS*/
-                /* A DC-only block has one value throughout, avoiding the two full transform passes.*/
+                /* A DC-only block has one value throughout, avoiding the two full transform
+                 * passes.*/
                 if (!ac) {
                     unsigned char val =
                         clampByte((double)coeff[0] * j->quant[co->q][0] / 8.0 + 128);
@@ -580,7 +582,8 @@ static int render(Jpeg *j, RcImage *im) {
                 }
 
                 /* APPLY THE TWO TRANSFORM PASSES*/
-                /* Dequantize horizontally, then reconstruct rows vertically with the shared cosine*/
+                /* Dequantize horizontally, then reconstruct rows vertically with the shared
+                 * cosine*/
                 /* basis.*/
                 for (v = 0; v < 8; v++)
                     for (x = 0; x < 8; x++) {
@@ -612,7 +615,8 @@ static int render(Jpeg *j, RcImage *im) {
             unsigned char *pixel = im->rgba + ((size_t)y * j->w + x) * 4;
 
             /* UPSAMPLE COMPONENTS AT PIXEL CENTRES*/
-            /* Clamp neighbours at the visible plane edges instead of sampling padded image blocks.*/
+            /* Clamp neighbours at the visible plane edges instead of sampling padded image
+             * blocks.*/
             for (c = 0; c < j->nc; c++) {
                 JComp *co = &j->c[c];
                 double fx = ((x + 0.5) * co->h / j->mh) - 0.5,
@@ -731,7 +735,8 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
         goto done;
 
     /* WALK LENGTH-DELIMITED MARKERS*/
-    /* Entropy scans consume their own bytes; other marker payloads stay within the declared length.*/
+    /* Entropy scans consume their own bytes; other marker payloads stay within the declared
+     * length.*/
     while (j->at < n) {
         int marker = nextMarker(j);
         unsigned length;
@@ -762,7 +767,8 @@ int rcJpeg(const unsigned char *p, size_t n, RcImage *im, int orient) {
             size_t at = 0;
             while (at < payload) {
                 /* READ QUANTIZATION TABLES*/
-                /* JPEG transmits values in zigzag order; the transform consumes natural coefficient*/
+                /* JPEG transmits values in zigzag order; the transform consumes natural
+                 * coefficient*/
                 /* order.*/
                 unsigned spec = body[at++], q = spec & 15, wide = spec >> 4, k;
                 if (q > 3 || wide > 1 || (wide ? 128 : 64) > payload - at)

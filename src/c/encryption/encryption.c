@@ -50,13 +50,15 @@ int performCipher(streamcipher_t *cipher, char *buffer, size_t length) {
         }
 
         buffer[i] ^= (char)(cipher->random_value & 0xFFULL);
-        /*this line extracts the lowest byte of the cipher's random_value by performing a bitwise AND with 255*/
+        /*this line extracts the lowest byte of the cipher's random_value by performing a bitwise
+         * AND with 255*/
         /*this means all bits over the first 8 are ANDed with 0, leaving 0*/
-        /*thus, only the lowest 8 bits of the random_value remain, which matches the size of buffer[i]*/
+        /*thus, only the lowest 8 bits of the random_value remain, which matches the size of
+         * buffer[i]*/
         /*it then XORs it with the current read byte from the buffer*/
 
         cipher->random_value >>= 8; /*shifts the random value right to use the next 8 bytes of it*/
-        cipher->bytes_available--; /*counts how many bytes remain in the random_value*/
+        cipher->bytes_available--;  /*counts how many bytes remain in the random_value*/
     }
 
     return 0;
@@ -80,7 +82,8 @@ int encryptFile(const char *filename, unsigned long long key) {
         return 1;
     }
 
-    file = fopen(filename, "r+b"); /*allows reading and writing to overwrite plaintext with ciphertext.*/
+    file = fopen(filename,
+                 "r+b"); /*allows reading and writing to overwrite plaintext with ciphertext.*/
     if (file == NULL) {
         return 1;
     }
@@ -93,22 +96,25 @@ int encryptFile(const char *filename, unsigned long long key) {
     }
 
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) { /*reads file into buffer*/
-        if (performCipher(&cipher, buffer, bytes_read) !=0) {
+        if (performCipher(&cipher, buffer, bytes_read) != 0) {
             fclose(file);
             return 1; /*returns the failure status from performCipher*/
         }
 
-        if (fseek(file, -(long)bytes_read, SEEK_CUR) != 0) { /*returns pointer to position in file back to where fread started*/
+        if (fseek(file, -(long)bytes_read, SEEK_CUR) !=
+            0) { /*returns pointer to position in file back to where fread started*/
             fclose(file);
             return 1; /*returns the failure status from fseek*/
         }
 
-        if (fwrite(buffer, 1, bytes_read, file) != bytes_read) { /*writes the ciphertext over the plaintext*/
+        if (fwrite(buffer, 1, bytes_read, file) !=
+            bytes_read) { /*writes the ciphertext over the plaintext*/
             fclose(file);
             return 1; /*returns the failure status from fwrite*/
         }
 
-        if (fseek(file, 0, SEEK_CUR) != 0) { /*performs a file-positioning operation to allow changing from reading to writing in r+b mode*/
+        if (fseek(file, 0, SEEK_CUR) != 0) { /*performs a file-positioning operation to allow
+                                                changing from reading to writing in r+b mode*/
             fclose(file);
             return 1; /*returns the failure status from fseek*/
         }

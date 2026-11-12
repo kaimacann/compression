@@ -6,7 +6,9 @@
  * @return 0 when account creation and file writing succeed; otherwise 1.
  * @author marceline
  */
-int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials) { /*This is being passed a pointer to the start of the 2d array.*/
+int createAccount(
+    char credentials[][2][CREDENTIAL_LENGTH],
+    int *num_credentials) { /*This is being passed a pointer to the start of the 2d array.*/
     if (*num_credentials < MAX_ACCOUNTS) {
         FILE *file = fopen(ACCOUNT_FILE, "wbx");
         if (file == NULL) {
@@ -69,16 +71,18 @@ int createAccount(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials
  * @return 0 when records load or first-account creation succeeds; otherwise 1.
  * @author marceline
  */
-int loadCredentials (char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials) {
+int loadCredentials(char credentials[][2][CREDENTIAL_LENGTH], int *num_credentials) {
     FILE *file = fopen(ACCOUNT_FILE, "rb");
     if (file == NULL) {
-        return createAccount(credentials, num_credentials); /* File does not exist, first time run.*/
+        return createAccount(credentials,
+                             num_credentials); /* File does not exist, first time run.*/
     }
 
     /* Read existing credentials from the file*/
     *num_credentials = 0;
     for (int i = 0; i < MAX_ACCOUNTS; i++) {
-        size_t username_read = fread(credentials[i][0], sizeof(char), CREDENTIAL_LENGTH, file); /*Finds length of current account*/
+        size_t username_read = fread(credentials[i][0], sizeof(char), CREDENTIAL_LENGTH,
+                                     file); /*Finds length of current account*/
         if (username_read != CREDENTIAL_LENGTH ||
             memchr(credentials[i][0], '\0', CREDENTIAL_LENGTH) == NULL)
             break;
@@ -134,9 +138,9 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
         for (; i < num_credentials; i++) {
             if (strcmp(username, credentials[i][0]) == 0 &&
                 strcmp(password, credentials[i][1]) == 0) {
-                    printf("Login successful.\n");
-                    return 0;
-                }
+                printf("Login successful.\n");
+                return 0;
+            }
         }
         printf("Incorrect username or password. Please try again.\n");
     }
@@ -147,7 +151,8 @@ int authenticateUser(char credentials[][2][CREDENTIAL_LENGTH], int num_credentia
  * @author marceline
  */
 int loginFunction(void) {
-    char credentials[MAX_ACCOUNTS][2][CREDENTIAL_LENGTH]; /* Creates 3D array to hold usernames and passwords.*/
+    char credentials[MAX_ACCOUNTS][2]
+                    [CREDENTIAL_LENGTH]; /* Creates 3D array to hold usernames and passwords.*/
     int num_credentials = 0;
     if (loadCredentials(credentials, &num_credentials) != 0) {
         printf("Error loading credentials.\n");

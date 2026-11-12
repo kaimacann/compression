@@ -2,12 +2,17 @@
  * @file media.c Format-aware processing and staged output transactions.
  * @author kai
  */
+#define _POSIX_C_SOURCE 200809L
+
 /*//////////////////////////////////////////////////
 IMPORTS
 //////////////////////////////////////////////////*/
 
 /* SHARED CONTRACT*/
 #include "media.h"
+
+#include <errno.h>
+#include <sys/stat.h>
 
 /*//////////////////////////////////////////////////
 CONFIG
@@ -159,14 +164,24 @@ static int writeOutputs(Output *out, size_t count, const unsigned char *source, 
     /* PREFLIGHT THE DESTINATION SET*/
     for (i = 0; i < count; i++) {
         FILE *existing;
+        struct stat metadata;
         for (j = 0; j < i; j++)
             if (!strcmp(out[i].path, out[j].path)) {
                 fprintf(stderr, "Duplicate output path: %s\n", out[i].path);
                 return 0;
             }
-        existing = fopen(out[i].path, "rb");
-        if (existing) {
+        if (!lstat(out[i].path, &metadata)) {
+            if (!S_ISREG(metadata.st_mode)) {
+                fprintf(stderr, "Refusing to replace a non-regular output target: %s\n",
+                        out[i].path);
+                return 0;
+            }
             out[i].existing = 1;
+            existing = fopen(out[i].path, "rb");
+            if (!existing) {
+                perror(out[i].path);
+                return 0;
+            }
             if (!force) {
                 fclose(existing);
                 fprintf(stderr,
@@ -191,6 +206,9 @@ static int writeOutputs(Output *out, size_t count, const unsigned char *source, 
                 }
             }
             fclose(existing);
+        } else if (errno != ENOENT) {
+            perror(out[i].path);
+            return 0;
         }
     }
 

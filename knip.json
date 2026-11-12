@@ -1,0 +1,6 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["make"],
+  "entry": ["config/**/*.{js,mjs,cjs,ts,tsx}", "scripts/**/*.mjs"],
+  "project": ["**/*.{js,mjs,cjs,jsx,ts,tsx}"]
+}
