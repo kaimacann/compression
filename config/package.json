@@ -1,29 +1,39 @@
 {
-  "name": "compression-project-docs",
-  "type": "module",
-  "version": "0.0.1",
-  "packageManager": "pnpm@10.30.3",
-  "docs": {
-    "title": "Compression",
-    "description": "Assessment brief, submission guidance, and project proposal.",
-    "out": "dist/docs"
-  },
-  "scripts": {
-    "docs": "docs dev --port 3010",
-    "docs:doxygen": "doxygen config/Doxyfile",
-    "build": "make && docs build --out dist/docs",
-    "quality": "node scripts/terra-quality.mjs",
-    "format:c": "make format-c",
-    "format:c:check": "make format-c-check",
-    "format": "prettier --write README.md 'docs/**/*.{md,mdx}' '!docs/assessment/assignment/brief.md'",
-    "prepare": "husky"
-  },
-  "devDependencies": {
-    "@changesets/cli": "^3.0.3",
-    "@terra-symposium/docs": "^0.4.3",
-    "@terra-symposium/standards-quality": "2.1.0",
-    "astro": "^7.4.4",
-    "husky": "^9.1.7",
-    "prettier": "^3.9.10"
-  }
+	"name": "compression-project-docs",
+	"type": "module",
+	"version": "0.0.1",
+	"packageManager": "pnpm@10.30.3",
+	"docs": {
+		"title": "Compression",
+		"description": "Assessment brief, submission guidance, and project proposal.",
+		"out": "dist/docs"
+	},
+	"scripts": {
+		"changeset": "node config/node_modules/@changesets/cli/bin.js",
+		"changeset:status": "node config/node_modules/@changesets/cli/bin.js status",
+		"version-packages": "node config/node_modules/@changesets/cli/bin.js version",
+		"docs": "mkdir -p dist/cache/astro-types && docs dev --port 3010",
+		"docs:doxygen": "doxygen config/Doxyfile",
+		"build": "make && mkdir -p dist/cache/astro-types && docs build --out dist/docs",
+		"quality": "node \"$(git rev-parse --show-toplevel)/scripts/quality-runner.mjs\" quality",
+		"quality:all": "node \"$(git rev-parse --show-toplevel)/scripts/quality-runner.mjs\" quality --all",
+		"format:c": "make format-c",
+		"format:c:check": "make format-c-check",
+		"prepare": "husky",
+		"verify": "pnpm run quality:all && pnpm run build && pnpm run test",
+		"test": "node --test scripts/run-native-tool.test.mjs && make test-media-output && make test-archive-roundtrip && make test-codec-primitives && make test-vector-transform && make test-media-jpeg-io"
+	},
+	"devDependencies": {
+		"@changesets/cli": "^3.0.3",
+		"@terra-symposium/docs": "^0.4.3",
+		"@terra-symposium/standards-quality": "2.3.7",
+		"astro": "^7.4.4",
+		"husky": "^9.1.7",
+		"prettier": "^3.9.10"
+	},
+	"pnpm": {
+		"overrides": {
+			"postcss-selector-parser": "6.1.5"
+		}
+	}
 }

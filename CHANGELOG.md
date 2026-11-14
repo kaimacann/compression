@@ -1,4 +1,12 @@
-# Change set
+# Changelog
+
+Changes to compression are recorded here when a Changeset is released.
+
+## Unreleased
+
+No release notes have been recorded yet.
+
+## Historical work recorded before Changesets
 
 This compression repository has coordinated work on its `development` and `main` branches.
 

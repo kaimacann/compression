@@ -70,6 +70,11 @@ typedef struct {
      */
     unsigned colors;
 } RcVector;
+/** Palette and contour settings used by vector conversion. */
+typedef struct {
+    unsigned colors;  /**< Palette size, from two through 256. */
+    double tolerance; /**< Maximum contour simplification distance. */
+} RcVectorOptions;
 
 /*//////////////////////////////////////////////////
 API
@@ -78,13 +83,12 @@ API
 /* PROCESSING OPERATIONS*/
 /** Trace adaptive colour regions to SVG and PDF paths.
  * @param image Decoded RGBA source.
- * @param colors Palette size, from two through 256.
- * @param tolerance Maximum contour simplification distance.
- * @param vector Receives owned SVG, PDF, and resource buffers.
+ * @param options Palette size and contour simplification distance.
+ * @param out Receives owned SVG, PDF, and resource buffers.
  * @return Nonzero on success.
  * @author kai
  */
-int rcVectorize(const RcImage *image, unsigned colors, double tolerance, RcVector *vector);
+int rcVectorize(const RcImage *image, RcVectorOptions options, RcVector *out);
 /** Release all buffers owned by a vector result.
  * @param vector Result to clear.
  * @author kai

@@ -29,13 +29,13 @@ Common inputs: JPEG, high-bit-depth TIFF, PNG, WebP, AVIF.
 
 Use lossless PNG: reversible row filters plus DEFLATE, with exact indexed color where possible ([PNG spec](https://www.w3.org/TR/png-3/), [RFC 2083](https://www.rfc-editor.org/rfc/rfc2083/)). Try an exact palette including transparency; otherwise retain color depth and use adaptive filters. Avoid JPEG/lossy WebP/AVIF, which create visible ringing and block artifacts around text and edges. Verify pixels and alpha exactly.
 
-| Format      | Lossless-first policy                                                                                                                         | Optional lossy operation                                                |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| JPEG        | Preserve; allow validated coefficient transforms or non-image metadata edits.                                                                 | Re-encode/resize to a named target.                                     |
-| WebP / AVIF | Preserve if efficient or unsupported; retain alpha, animation, color, and sequence timing.                                                    | Re-encode only for an explicit target and compatible consumer.          |
-| GIF         | Palette/LZW is already compressed; retain frame order, delays, disposal, transparency.                                                        | Convert only if full animation is retained and destination is selected. |
-| TIFF        | Inspect each page, bit depth, and compression; test lossless DEFLATE/LZW on uncompressed or losslessly encoded pixels; retain tags/structure. | JPEG-in-TIFF/downsampling requires opt-in.                              |
-| BMP         | Encode uncompressed input samples in a suitable lossless format; retain dimensions, channel values, alpha semantics.                          | Quantization or lossy output requires opt-in.                           |
+| Format | Lossless-first policy | Optional lossy operation |
+| --- | --- | --- |
+| JPEG | Preserve; allow validated coefficient transforms or non-image metadata edits. | Re-encode/resize to a named target. |
+| WebP / AVIF | Preserve if efficient or unsupported; retain alpha, animation, color, and sequence timing. | Re-encode only for an explicit target and compatible consumer. |
+| GIF | Palette/LZW is already compressed; retain frame order, delays, disposal, transparency. | Convert only if full animation is retained and destination is selected. |
+| TIFF | Inspect each page, bit depth, and compression; test lossless DEFLATE/LZW on uncompressed or losslessly encoded pixels; retain tags/structure. | JPEG-in-TIFF/downsampling requires opt-in. |
+| BMP | Encode uncompressed input samples in a suitable lossless format; retain dimensions, channel values, alpha semantics. | Quantization or lossy output requires opt-in. |
 
 General byte compression rarely helps GIF; conversions must respect animation extensions ([GIF89a](https://giflib.sourceforge.net/gifstandard/GIF89a.html)). TIFF encodings vary by page ([Adobe overview](https://helpx.adobe.com/photoshop/desktop/save-and-export/export-files-to-different-formats/file-compression-in-photoshop.html)).
 

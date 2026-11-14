@@ -3,74 +3,74 @@ title: Processing flow diagram
 description: Explore the compression CLI workflows and export their diagram as a PNG.
 ---
 
-import { NodesBlock } from "@terra-symposium/docs";
+import { NodesBlock } from '@terra-symposium/docs';
 
 The diagram shows the four file operations available through the command line and interactive menu. Compression and decompression operate on opaque bytes; inspection and search use separate analysis paths.
 
 <NodesBlock
-  client:load
-  block={{
-    _type: "nodes",
-    _key: "compression-demo-flow",
-    direction: "TB",
-    height: 860,
-    nodeSep: 42,
-    rankSep: 46,
-    nodes: [
-      {
-        id: "start",
-        type: "origin",
-        data: { title: "CLI or interactive menu" },
-      },
-      { id: "mode", type: "decision", data: { title: "Select operation" } },
-      {
-        id: "compress",
-        type: "process",
-        data: { title: "Count bytes and build Huffman tree" },
-      },
-      {
-        id: "encode",
-        type: "process",
-        data: { title: "Write Huffman or raw TCMP frame" },
-      },
-      {
-        id: "decompress",
-        type: "process",
-        data: { title: "Validate header and decode frame" },
-      },
-      {
-        id: "inspect",
-        type: "process",
-        data: { title: "Count and merge-sort byte frequencies" },
-      },
-      {
-        id: "search",
-        type: "process",
-        data: { title: "Search literal bytes with KMP" },
-      },
-      {
-        id: "output",
-        type: "data",
-        data: { title: "Write new output; reject existing path" },
-      },
-      {
-        id: "report",
-        type: "terminal",
-        data: { title: "Report status and results" },
-      },
-    ],
-    edges: [
-      { id: "e1", source: "start", target: "mode" },
-      { id: "e2", source: "mode", target: "compress", label: "compress" },
-      { id: "e3", source: "compress", target: "encode" },
-      { id: "e4", source: "encode", target: "output" },
-      { id: "e5", source: "mode", target: "decompress", label: "decompress" },
-      { id: "e6", source: "decompress", target: "output" },
-      { id: "e7", source: "mode", target: "inspect", label: "inspect" },
-      { id: "e8", source: "inspect", target: "report" },
-      { id: "e9", source: "mode", target: "search", label: "search" },
-      { id: "e10", source: "search", target: "report" },
-      { id: "e11", source: "output", target: "report" },
-    ],
-  }}
+	client:load
+	block={{
+		_type: 'nodes',
+		_key: 'compression-demo-flow',
+		direction: 'TB',
+		height: 860,
+		nodeSep: 42,
+		rankSep: 46,
+		nodes: [
+			{
+				id: 'start',
+				type: 'origin',
+				data: { title: 'CLI or interactive menu' },
+			},
+			{ id: 'mode', type: 'decision', data: { title: 'Select operation' } },
+			{
+				id: 'compress',
+				type: 'process',
+				data: { title: 'Count bytes and build Huffman tree' },
+			},
+			{
+				id: 'encode',
+				type: 'process',
+				data: { title: 'Write Huffman or raw TCMP frame' },
+			},
+			{
+				id: 'decompress',
+				type: 'process',
+				data: { title: 'Validate header and decode frame' },
+			},
+			{
+				id: 'inspect',
+				type: 'process',
+				data: { title: 'Count and merge-sort byte frequencies' },
+			},
+			{
+				id: 'search',
+				type: 'process',
+				data: { title: 'Search literal bytes with KMP' },
+			},
+			{
+				id: 'output',
+				type: 'data',
+				data: { title: 'Write new output; reject existing path' },
+			},
+			{
+				id: 'report',
+				type: 'terminal',
+				data: { title: 'Report status and results' },
+			},
+		],
+		edges: [
+			{ id: 'e1', source: 'start', target: 'mode' },
+			{ id: 'e2', source: 'mode', target: 'compress', label: 'compress' },
+			{ id: 'e3', source: 'compress', target: 'encode' },
+			{ id: 'e4', source: 'encode', target: 'output' },
+			{ id: 'e5', source: 'mode', target: 'decompress', label: 'decompress' },
+			{ id: 'e6', source: 'decompress', target: 'output' },
+			{ id: 'e7', source: 'mode', target: 'inspect', label: 'inspect' },
+			{ id: 'e8', source: 'inspect', target: 'report' },
+			{ id: 'e9', source: 'mode', target: 'search', label: 'search' },
+			{ id: 'e10', source: 'search', target: 'report' },
+			{ id: 'e11', source: 'output', target: 'report' },
+		],
+	}}
 />

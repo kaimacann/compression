@@ -7,7 +7,61 @@ IMPORTS
 //////////////////////////////////////////////////*/
 
 /* SHARED CONTRACT*/
+#include "codec.h"
 #include "media.h"
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <limits.h>
+
+enum {
+    PDF_WHITESPACE_TAB = 9,
+    PDF_WHITESPACE_LINE_FEED = 10,
+    PDF_WHITESPACE_FORM_FEED = 12,
+    PDF_WHITESPACE_CARRIAGE_RETURN = 13,
+    PDF_WHITESPACE_SPACE = 32,
+    PDF_DECIMAL_RADIX = 10,
+    PDF_MAX_NESTING_DEPTH = 32,
+    PDF_MAX_OBJECT_COUNT = 100000,
+    PDF_MAX_GENERATION = 65535,
+    PDF_MAX_REFERENCE_DEPTH = 8,
+    PDF_MIN_HEADER_LENGTH = 12,
+    PDF_VERSION_MARKER_LENGTH = 5,
+    PDF_EOF_MARKER_LENGTH = 5,
+    PDF_STARTXREF_KEYWORD_LENGTH = 9,
+    PDF_XREF_KEYWORD_LENGTH = 4,
+    PDF_TRAILER_KEYWORD_LENGTH = 7,
+    PDF_STREAM_KEYWORD_LENGTH = 6,
+    PDF_ENDSTREAM_KEYWORD_LENGTH = 9,
+    PDF_MAX_FILTER_COUNT = 8,
+    PDF_ASCII85_MINIMUM = 33,
+    PDF_ASCII85_MAXIMUM = 117,
+    PDF_ASCII85_RADIX = 85,
+    PDF_ASCII85_TUPLE_DIGITS = 5,
+    PDF_ASCII85_PADDING_DIGIT = 84,
+    PDF_BITS_PER_BYTE = 8,
+    PDF_HEX_RADIX = 16,
+    PDF_SIXTEEN_BITS = 16,
+    PNG_PREDICTOR_MINIMUM = 10,
+    PNG_PREDICTOR_MAXIMUM = 15,
+    PDF_SAMPLE_MAXIMUM = 255,
+    PDF_RGB_LOOKUP_CHANNELS = 3,
+    PDF_RGB_LOOKUP_CAPACITY = 768,
+    PDF_COLOR_KEY_RANGE_COUNT = 6,
+    PDF_SERIALIZE_TEXT_CAPACITY = 128,
+    PDF_REPLACEMENT_TEXT_CAPACITY = 256,
+    PDF_XREF_OFFSET_WIDTH = 10,
+    PDF_XREF_GENERATION_WIDTH = 5,
+    PDF_HEADER_BYTES_LENGTH = 15,
+    PDF_END_OBJECT_TEXT_LENGTH = 8,
+    PDF_TRAILER_TEXT_LENGTH = 8,
+    PDF_ENDSTREAM_TEXT_LENGTH = 11,
+};
+
+#define PDF_SAMPLE_ROUNDING_BIAS 0.5
 
 /*//////////////////////////////////////////////////
 CONFIG
@@ -15,9 +69,36 @@ CONFIG
 
 /* PROCESSING STATE*/
 typedef struct {
-    const unsigned char *p;
-    size_t n;
+    const unsigned char *sourceBytes;
+    size_t sourceLength;
 } Slice;
+typedef struct {
+    size_t cursor;
+    size_t value;
+} ParsedUnsigned;
+typedef struct {
+    unsigned objectId;
+    unsigned generation;
+} PdfReference;
+typedef struct {
+    unsigned width;
+    unsigned height;
+    unsigned channels;
+    unsigned bitsPerSample;
+} PredictorShape;
+typedef enum {
+    PDF_CONTAINER_ARRAY,
+    PDF_CONTAINER_DICTIONARY,
+} PdfContainerKind;
+typedef struct {
+    unsigned depth;
+    PdfContainerKind kind;
+} ContainerContext;
+typedef struct {
+    size_t cursor;
+    size_t trailer;
+    size_t xref;
+} XrefIndex;
 typedef struct {
     size_t offset, stream, length;
     Slice value; /* The first value bounds dictionary lookups, excluding any binary stream.*/
@@ -27,13 +108,25 @@ typedef struct {
     RcBuffer replacement;
 } PdfObject;
 typedef struct {
-    const unsigned char *p;
-    size_t n;
+    const unsigned char *sourceBytes;
+    size_t sourceLength;
     PdfObject *objects;
     unsigned count;
     Slice trailer;
     int unsupported;
 } Pdf;
+typedef struct {
+    Slice source;
+    RcBuffer *output;
+    size_t cursor;
+    unsigned long value;
+    unsigned count;
+    int ended;
+} Ascii85State;
+typedef struct {
+    unsigned long value;
+    size_t outputLength;
+} Ascii85Emission;
 
 /*//////////////////////////////////////////////////
 PARSING
@@ -42,161 +135,282 @@ PARSING
 /* TOKENS*/
 /**
  * Recognize PDF whitespace bytes.
- * @param c Byte tested for PDF whitespace.
+ * @param byteValue Byte tested for PDF whitespace.
  * @return 1 for a PDF whitespace byte; otherwise 0.
  * @author kai
  */
-static int white(unsigned char c) {
-    return c == 0 || c == 9 || c == 10 || c == 12 || c == 13 || c == 32;
+static int white(unsigned char byteValue) {
+    return byteValue == 0 || byteValue == PDF_WHITESPACE_TAB ||
+           byteValue == PDF_WHITESPACE_LINE_FEED || byteValue == PDF_WHITESPACE_FORM_FEED ||
+           byteValue == PDF_WHITESPACE_CARRIAGE_RETURN || byteValue == PDF_WHITESPACE_SPACE;
 }
 /**
  * Recognize PDF token delimiters, including whitespace.
- * @param c Byte tested for PDF token delimiting.
+ * @param byteValue Byte tested for PDF token delimiting.
  * @return 1 for a delimiter byte; otherwise 0.
  * @author kai
  */
-static int delimiter(unsigned char c) { return white(c) || strchr("()<>[]{}/%", c) != NULL; }
+static int delimiter(unsigned char byteValue) {
+    return white(byteValue) || strchr("()<>[]{}/%", byteValue) != NULL;
+}
+
+/**
+ * Copy a bounded byte range after the caller has validated both buffers.
+ * @param destination Storage receiving copied bytes.
+ * @param sourceBytes Valid source storage.
+ * @param length Number of bytes to copy.
+ * @author kai
+ */
+static void copyPdfBytes(unsigned char *destination, const unsigned char *sourceBytes,
+                         size_t length) {
+    size_t itemIndex;
+    for (itemIndex = 0; itemIndex < length; itemIndex++) {
+        destination[itemIndex] = sourceBytes[itemIndex];
+    }
+}
+
+/**
+ * Move a bounded byte range while preserving overlapping source bytes.
+ * @param destination Storage receiving moved bytes.
+ * @param sourceBytes Valid source storage.
+ * @param length Number of bytes to move.
+ * @author kai
+ */
+static void movePdfBytes(unsigned char *destination, const unsigned char *sourceBytes,
+                         size_t length) {
+    size_t itemIndex;
+    uintptr_t destinationAddress = (uintptr_t)destination;
+    uintptr_t sourceAddress = (uintptr_t)sourceBytes;
+    if (destinationAddress < sourceAddress) {
+        for (itemIndex = 0; itemIndex < length; itemIndex++) {
+            destination[itemIndex] = sourceBytes[itemIndex];
+        }
+    } else if (destinationAddress > sourceAddress) {
+        for (itemIndex = length; itemIndex > 0; itemIndex--) {
+            destination[itemIndex - 1] = sourceBytes[itemIndex - 1];
+        }
+    }
+}
 /**
  * Skip PDF whitespace and comments, returning the next token offset.
- * @param p PDF source bytes.
- * @param n Source length.
- * @param at Offset from which whitespace and comments are skipped.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Offset from which whitespace and comments are skipped.
  * @return Offset of the next token, or n when only whitespace remains.
  * @author kai
  */
-static size_t space(const unsigned char *p, size_t n, size_t at) {
+static size_t space(const unsigned char *sourceBytes, size_t sourceLength, size_t cursor) {
     for (;;) {
-        while (at < n && white(p[at]))
-            at++;
-        if (at < n && p[at] == '%') {
-            while (at < n && p[at] != '\r' && p[at] != '\n')
-                at++;
-        } else
-            return at;
+        while (cursor < sourceLength && white(sourceBytes[cursor])) {
+            cursor++;
+        }
+        if (cursor < sourceLength && sourceBytes[cursor] == '%') {
+            while (cursor < sourceLength && sourceBytes[cursor] != '\r' &&
+                   sourceBytes[cursor] != '\n') {
+                cursor++;
+            }
+        } else {
+            return cursor;
+        }
     }
 }
 /**
  * Match a complete PDF keyword at an offset without matching a longer name.
- * @param p PDF source bytes.
- * @param n Source length.
- * @param at Offset where the keyword must begin.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Offset where the keyword must begin.
  * @param word Keyword that must end at a delimiter.
  * @return 1 for an exact delimited keyword match; otherwise 0.
  * @author kai
  */
-static int token(const unsigned char *p, size_t n, size_t at, const char *word) {
+static int token(const unsigned char *sourceBytes, size_t sourceLength, size_t cursor,
+                 const char *word) {
     size_t len = strlen(word);
-    return at <= n && len <= n - at && !memcmp(p + at, word, len) &&
-           (at + len == n || delimiter(p[at + len]));
+    return cursor <= sourceLength && len <= sourceLength - cursor &&
+           !memcmp(sourceBytes + cursor, word, len) &&
+           (cursor + len == sourceLength || delimiter(sourceBytes[cursor + len]));
 }
 /**
  * Parse an unsigned decimal integer and advance the input cursor.
- * @param p PDF source bytes.
- * @param n Source length.
- * @param at Input cursor; advanced past the integer on success.
- * @param v Receives the parsed nonnegative integer.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param parsed Cursor advanced past the integer and parsed nonnegative value.
  * @return 1 when a bounded integer is parsed; otherwise 0.
  * @author kai
  */
-static int uintAt(const unsigned char *p, size_t n, size_t *at, size_t *v) {
-    size_t k = space(p, n, *at), value = 0, start = k;
-    while (k < n && p[k] >= '0' && p[k] <= '9') {
-        unsigned d = p[k++] - '0';
-        if (value > ((size_t)-1 - d) / 10)
+static int uintAt(const unsigned char *sourceBytes, size_t sourceLength, ParsedUnsigned *parsed) {
+    size_t loopIndex = space(sourceBytes, sourceLength, parsed->cursor);
+    size_t value = 0;
+    size_t start = loopIndex;
+    while (loopIndex < sourceLength && sourceBytes[loopIndex] >= '0' &&
+           sourceBytes[loopIndex] <= '9') {
+        unsigned decimalDigit = sourceBytes[loopIndex++] - '0';
+        if (value > ((size_t)-1 - decimalDigit) / PDF_DECIMAL_RADIX) {
             return 0;
-        value = value * 10 + d;
+        }
+        value = (value * PDF_DECIMAL_RADIX) + decimalDigit;
     }
-    if (k == start || (k < n && !delimiter(p[k])))
+    if (loopIndex == start || (loopIndex < sourceLength && !delimiter(sourceBytes[loopIndex]))) {
         return 0;
-    *at = k;
-    *v = value;
+    }
+    parsed->cursor = loopIndex;
+    parsed->value = value;
     return 1;
 }
 /**
  * Find the end of one PDF value while bounding nested arrays and dictionaries.
- * @param p PDF source bytes.
- * @param n Source length.
- * @param at Offset at the first byte of the value.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Offset at the first byte of the value.
  * @param depth Recursion depth, bounded to prevent excessive nesting.
  * @return Offset after the value, or n + 1 for malformed or over-nested input.
  * @author kai
  */
-static size_t valueEnd(const unsigned char *p, size_t n, size_t at, unsigned depth) {
-    size_t k = space(p, n, at), start = k;
-    if (depth > 32 || k == n)
-        return n + 1;
+static size_t valueEnd(const unsigned char *sourceBytes, size_t sourceLength, size_t cursor,
+                       unsigned depth);
 
-    /* SKIP LITERAL STRINGS*/
-    /* Escapes and nested parentheses belong to the string rather than the surrounding PDF syntax.*/
-    if (p[k] == '(') {
-        unsigned nesting = 1;
-        k++;
-        while (k < n && nesting) {
-            if (p[k] == '\\') {
-                k++;
-                if (k < n) {
-                    if (p[k] == '\r' && k + 1 < n && p[k + 1] == '\n')
-                        k++;
-                    k++;
+/**
+ * Find the end of a nested PDF literal string while accounting for escaped bytes.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Cursor at the opening parenthesis.
+ * @return Offset after the string, or sourceLength + 1 when unclosed.
+ * @author kai
+ */
+static size_t literalStringEnd(const unsigned char *sourceBytes, size_t sourceLength,
+                               size_t cursor) {
+    unsigned nesting = 1;
+    cursor++;
+    while (cursor < sourceLength && nesting) {
+        if (sourceBytes[cursor] == '\\') {
+            cursor++;
+            if (cursor < sourceLength) {
+                if (sourceBytes[cursor] == '\r' && cursor + 1 < sourceLength &&
+                    sourceBytes[cursor + 1] == '\n') {
+                    cursor++;
                 }
-            } else {
-                if (p[k] == '(')
-                    nesting++;
-                if (p[k] == ')')
-                    nesting--;
-                k++;
+                cursor++;
             }
-        }
-        return nesting ? n + 1 : k;
-    }
-
-    /* SKIP HEXADECIMAL STRINGS*/
-    if (p[k] == '<' && k + 1 < n && p[k + 1] != '<') {
-        k++;
-        while (k < n && p[k] != '>')
-            k++;
-        return k < n ? k + 1 : n + 1;
-    }
-
-    /* SKIP NESTED CONTAINERS*/
-    /* Recurse through arrays and dictionaries while enforcing the shared nesting limit.*/
-    if (p[k] == '[' || (p[k] == '<' && k + 1 < n && p[k + 1] == '<')) {
-        int dict = p[k] == '<';
-        k += dict ? 2 : 1;
-        for (;;) {
-            k = space(p, n, k);
-            if (k >= n)
-                return n + 1;
-            if (!dict && p[k] == ']')
-                return k + 1;
-            if (dict && k + 1 < n && p[k] == '>' && p[k + 1] == '>')
-                return k + 2;
-            k = valueEnd(p, n, k, depth + 1);
-            if (k > n)
-                return k;
+        } else {
+            if (sourceBytes[cursor] == '(') {
+                nesting++;
+            } else if (sourceBytes[cursor] == ')') {
+                nesting--;
+            }
+            cursor++;
         }
     }
+    return nesting ? sourceLength + 1 : cursor;
+}
 
-    /* READ A SCALAR OR INDIRECT REFERENCE*/
-    /* An integer pair followed by R is one value, so callers must advance past all three tokens.*/
-    if (p[k] == '/')
-        k++;
-    else if (strchr("]>)", p[k]))
-        return n + 1;
-    while (k < n && !delimiter(p[k]))
-        k++;
-    if (k == start)
-        return n + 1;
-    if (p[start] >= '0' && p[start] <= '9') {
-        size_t next = k, generation;
-        if (uintAt(p, n, &next, &generation)) {
-            next = space(p, n, next);
-            if (token(p, n, next, "R")) {
+/**
+ * Find the end of a PDF hexadecimal string.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Cursor at the opening angle bracket.
+ * @return Offset after the string, or sourceLength + 1 when unclosed.
+ * @author kai
+ */
+static size_t hexStringEnd(const unsigned char *sourceBytes, size_t sourceLength, size_t cursor) {
+    cursor++;
+    while (cursor < sourceLength && sourceBytes[cursor] != '>') {
+        cursor++;
+    }
+    return cursor < sourceLength ? cursor + 1 : sourceLength + 1;
+}
+
+/**
+ * Find the end of a PDF array or dictionary, recursively bounding its values.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Cursor at the opening delimiter.
+ * @param context Nesting depth and array/dictionary kind.
+ * @return Offset after the container, or sourceLength + 1 if malformed.
+ * @author kai
+ */
+static size_t containerEnd(const unsigned char *sourceBytes, size_t sourceLength, size_t cursor,
+                           ContainerContext context) {
+    int dictionary = context.kind == PDF_CONTAINER_DICTIONARY;
+    cursor += dictionary ? 2U : 1U;
+    for (;;) {
+        cursor = space(sourceBytes, sourceLength, cursor);
+        if (cursor >= sourceLength) {
+            return sourceLength + 1;
+        }
+        if ((!dictionary && sourceBytes[cursor] == ']') ||
+            (dictionary && cursor + 1 < sourceLength && sourceBytes[cursor] == '>' &&
+             sourceBytes[cursor + 1] == '>')) {
+            return cursor + (dictionary ? 2U : 1U);
+        }
+        cursor = valueEnd(sourceBytes, sourceLength, cursor, context.depth + 1);
+        if (cursor > sourceLength) {
+            return cursor;
+        }
+    }
+}
+
+/**
+ * Find the end of a scalar PDF token or a two-integer indirect reference.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Cursor at the first token byte.
+ * @return Offset after the scalar/reference, or sourceLength + 1 if malformed.
+ * @author kai
+ */
+static size_t scalarEnd(const unsigned char *sourceBytes, size_t sourceLength, size_t cursor) {
+    size_t start = cursor;
+    if (sourceBytes[cursor] == '/') {
+        cursor++;
+    } else if (strchr("]>)", sourceBytes[cursor])) {
+        return sourceLength + 1;
+    }
+    while (cursor < sourceLength && !delimiter(sourceBytes[cursor])) {
+        cursor++;
+    }
+    if (cursor == start) {
+        return sourceLength + 1;
+    }
+    if (sourceBytes[start] >= '0' && sourceBytes[start] <= '9') {
+        ParsedUnsigned parsed = {cursor, 0};
+        if (uintAt(sourceBytes, sourceLength, &parsed)) {
+            size_t next = space(sourceBytes, sourceLength, parsed.cursor);
+            if (token(sourceBytes, sourceLength, next, "R")) {
                 return next + 1;
             }
         }
     }
-    return k;
+    return cursor;
+}
+
+/**
+ * Find the end of one PDF value while bounding nested arrays and dictionaries.
+ * @param sourceBytes PDF source bytes.
+ * @param sourceLength Source length.
+ * @param cursor Offset at the first byte of the value.
+ * @param depth Recursion depth, bounded to prevent excessive nesting.
+ * @return Offset after the value, or sourceLength + 1 for malformed input.
+ * @author kai
+ */
+static size_t valueEnd(const unsigned char *sourceBytes, size_t sourceLength, size_t cursor,
+                       unsigned depth) {
+    cursor = space(sourceBytes, sourceLength, cursor);
+    if (depth > PDF_MAX_NESTING_DEPTH || cursor == sourceLength) {
+        return sourceLength + 1;
+    }
+    if (sourceBytes[cursor] == '(') {
+        return literalStringEnd(sourceBytes, sourceLength, cursor);
+    }
+    if (sourceBytes[cursor] == '<' && cursor + 1 < sourceLength && sourceBytes[cursor + 1] != '<') {
+        return hexStringEnd(sourceBytes, sourceLength, cursor);
+    }
+    if (sourceBytes[cursor] == '[' || (sourceBytes[cursor] == '<' && cursor + 1 < sourceLength &&
+                                       sourceBytes[cursor + 1] == '<')) {
+        int dictionary = sourceBytes[cursor] == '<';
+        return containerEnd(
+            sourceBytes, sourceLength, cursor,
+            (ContainerContext){depth, dictionary ? PDF_CONTAINER_DICTIONARY : PDF_CONTAINER_ARRAY});
+    }
+    return scalarEnd(sourceBytes, sourceLength, cursor);
 }
 /**
  * Find a named value in a PDF dictionary slice.
@@ -207,309 +421,550 @@ static size_t valueEnd(const unsigned char *p, size_t n, size_t at, unsigned dep
  * @author kai
  */
 static int dictValue(Slice dictionary, const char *key, Slice *result) {
-    const unsigned char *p = dictionary.p;
-    size_t end = dictionary.n, at = space(p, end, 0), keyLength = strlen(key);
-    if (at + 2 > end || memcmp(p + at, "<<", 2))
+    const unsigned char *sourceBytes = dictionary.sourceBytes;
+    size_t end = dictionary.sourceLength;
+    size_t cursor = space(sourceBytes, end, 0);
+    size_t keyLength = strlen(key);
+    if (cursor + 2 > end || memcmp(sourceBytes + cursor, "<<", 2) != 0) {
         return 0;
-    at += 2;
-    while ((at = space(p, end, at)) < end) {
-        size_t start = at, keyEnd, value, finish;
-        if (at + 1 < end && p[at] == '>' && p[at + 1] == '>')
+    }
+    cursor += 2;
+    while ((cursor = space(sourceBytes, end, cursor)) < end) {
+        size_t start = cursor;
+        size_t keyEnd;
+        size_t value;
+        size_t finish;
+        if (cursor + 1 < end && sourceBytes[cursor] == '>' && sourceBytes[cursor + 1] == '>') {
             return 0;
-        if (p[at] != '/')
+        }
+        if (sourceBytes[cursor] != '/') {
             return -1;
-        keyEnd = valueEnd(p, end, at, 0);
-        if (keyEnd > end)
+        }
+        keyEnd = valueEnd(sourceBytes, end, cursor, 0);
+        if (keyEnd > end) {
             return -1;
-        value = space(p, end, keyEnd);
-        finish = valueEnd(p, end, value, 0);
-        if (finish > end)
+        }
+        value = space(sourceBytes, end, keyEnd);
+        finish = valueEnd(sourceBytes, end, value, 0);
+        if (finish > end) {
             return -1;
-        if (keyEnd - start == keyLength && !memcmp(p + start, key, keyLength)) {
-            result->p = p + value;
-            result->n = finish - value;
+        }
+        if (keyEnd - start == keyLength && !memcmp(sourceBytes + start, key, keyLength)) {
+            result->sourceBytes = sourceBytes + value;
+            result->sourceLength = finish - value;
             return 1;
         }
-        at = finish;
+        cursor = finish;
     }
     return -1;
 }
 /**
  * Compare a PDF name slice with an unescaped name.
- * @param s PDF name slice to compare.
- * @param v Expected decoded name without the leading slash.
+ * @param valueSlice PDF name slice to compare.
+ * @param parsedValue Expected decoded name without the leading slash.
  * @return 1 when the complete name matches; otherwise 0.
  * @author kai
  */
-static int nameIs(Slice s, const char *v) { return s.n == strlen(v) && !memcmp(s.p, v, s.n); }
+static int nameIs(Slice valueSlice, const char *parsedValue) {
+    return valueSlice.sourceLength == strlen(parsedValue) &&
+           !memcmp(valueSlice.sourceBytes, parsedValue, valueSlice.sourceLength);
+}
 
 /* REFERENCES*/
 /**
  * Return the parsed value slice for a live indirect object.
  * @param pdf Parsed document object table.
- * @param id Indirect object number to look up.
+ * @param objectId Indirect object number to look up.
  * @param value Receives the object value slice.
  * @return 1 when the live object is valid; otherwise 0.
  * @author kai
  */
-static int objectValue(Pdf *pdf, unsigned id, Slice *value) {
-    size_t at, num, gen;
-    if (id >= pdf->count || !pdf->objects[id].live)
+static int objectValue(Pdf *pdf, unsigned objectId, Slice *value) {
+    size_t cursor;
+    ParsedUnsigned parsed;
+    if (objectId >= pdf->count || !pdf->objects[objectId].live) {
         return 0;
-    at = pdf->objects[id].offset;
-    if (!uintAt(pdf->p, pdf->n, &at, &num) || !uintAt(pdf->p, pdf->n, &at, &gen) || num != id ||
-        gen != pdf->objects[id].generation)
+    }
+    cursor = pdf->objects[objectId].offset;
+    parsed = (ParsedUnsigned){cursor, 0};
+    if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed) || parsed.value != objectId) {
         return 0;
-    at = space(pdf->p, pdf->n, at);
-    if (!token(pdf->p, pdf->n, at, "obj"))
+    }
+    cursor = parsed.cursor;
+    parsed = (ParsedUnsigned){cursor, 0};
+    if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed) ||
+        parsed.value != pdf->objects[objectId].generation) {
         return 0;
-    at = space(pdf->p, pdf->n, at + 3);
+    }
+    cursor = parsed.cursor;
+    cursor = space(pdf->sourceBytes, pdf->sourceLength, cursor);
+    if (!token(pdf->sourceBytes, pdf->sourceLength, cursor, "obj")) {
+        return 0;
+    }
+    cursor = space(pdf->sourceBytes, pdf->sourceLength, cursor + 3);
     {
-        size_t end = valueEnd(pdf->p, pdf->n, at, 0);
-        if (end > pdf->n)
+        size_t end = valueEnd(pdf->sourceBytes, pdf->sourceLength, cursor, 0);
+        if (end > pdf->sourceLength) {
             return 0;
-        value->p = pdf->p + at;
-        value->n = end - at;
+        }
+        value->sourceBytes = pdf->sourceBytes + cursor;
+        value->sourceLength = end - cursor;
     }
     return 1;
 }
 /**
  * Parse an indirect object reference and return its object and generation numbers.
- * @param s Value slice expected to contain an indirect reference.
- * @param id Receives the referenced object number.
- * @param gen Receives the referenced generation number.
+ * @param valueSlice Value slice expected to contain an indirect reference.
+ * @param result Receives the referenced object and generation numbers.
  * @return 1 for a valid bounded reference; otherwise 0.
  * @author kai
  */
-static int reference(Slice s, unsigned *id, unsigned *gen) {
-    size_t at = 0, a, b;
-    if (!uintAt(s.p, s.n, &at, &a) || !uintAt(s.p, s.n, &at, &b) || a > 100000 || b > 65535)
+static int reference(Slice valueSlice, PdfReference *result) {
+    ParsedUnsigned parsed = {0, 0};
+    size_t firstNumber;
+    size_t secondNumber;
+    if (!uintAt(valueSlice.sourceBytes, valueSlice.sourceLength, &parsed)) {
         return 0;
-    at = space(s.p, s.n, at);
-    if (!token(s.p, s.n, at, "R"))
+    }
+    firstNumber = parsed.value;
+    parsed.value = 0;
+    if (!uintAt(valueSlice.sourceBytes, valueSlice.sourceLength, &parsed)) {
         return 0;
-    *id = (unsigned)a;
-    *gen = (unsigned)b;
+    }
+    secondNumber = parsed.value;
+    if (firstNumber > PDF_MAX_OBJECT_COUNT || secondNumber > PDF_MAX_GENERATION) {
+        return 0;
+    }
+    parsed.cursor = space(valueSlice.sourceBytes, valueSlice.sourceLength, parsed.cursor);
+    if (!token(valueSlice.sourceBytes, valueSlice.sourceLength, parsed.cursor, "R")) {
+        return 0;
+    }
+    result->objectId = (unsigned)firstNumber;
+    result->generation = (unsigned)secondNumber;
     return 1;
 }
 /**
  * Replace a reference slice with its referenced object value when resolvable.
  * @param pdf Document used to look up indirect objects.
- * @param s Reference slice, replaced by its resolved value on success.
+ * @param valueSlice Reference slice, replaced by its resolved value on success.
  * @return 1 when resolved or already direct; otherwise 0 for invalid or cyclic references.
  * @author kai
  */
-static int resolve(Pdf *pdf, Slice *s) {
-    unsigned id, gen;
+static int resolve(Pdf *pdf, Slice *valueSlice) {
+    PdfReference referenceValue;
     unsigned depth;
-    for (depth = 0; depth < 8; depth++) {
-        if (!reference(*s, &id, &gen))
+    for (depth = 0; depth < PDF_MAX_REFERENCE_DEPTH; depth++) {
+        if (!reference(*valueSlice, &referenceValue)) {
             return 1;
-        if (id >= pdf->count || pdf->objects[id].generation != gen || !objectValue(pdf, id, s))
+        }
+        if (referenceValue.objectId >= pdf->count ||
+            pdf->objects[referenceValue.objectId].generation != referenceValue.generation ||
+            !objectValue(pdf, referenceValue.objectId, valueSlice)) {
             return 0;
+        }
     }
     return 0;
 }
 /**
  * Resolve a nonnegative integer PDF value, including an indirect reference.
  * @param pdf Document used to resolve indirect values.
- * @param s PDF value expected to encode a nonnegative integer.
- * @param v Receives the integer result.
+ * @param valueSlice PDF value expected to encode a nonnegative integer.
+ * @param parsedValue Receives the integer result.
  * @return 1 when the full value is a valid integer; otherwise 0.
  * @author kai
  */
-static int sizeValue(Pdf *pdf, Slice s, size_t *v) {
-    size_t at = 0;
-    return resolve(pdf, &s) && uintAt(s.p, s.n, &at, v) && space(s.p, s.n, at) == s.n;
+static int sizeValue(Pdf *pdf, Slice valueSlice, size_t *parsedValue) {
+    ParsedUnsigned parsed = {0, 0};
+    if (!resolve(pdf, &valueSlice) ||
+        !uintAt(valueSlice.sourceBytes, valueSlice.sourceLength, &parsed) ||
+        space(valueSlice.sourceBytes, valueSlice.sourceLength, parsed.cursor) !=
+            valueSlice.sourceLength) {
+        return 0;
+    }
+    *parsedValue = parsed.value;
+    return 1;
 }
 /**
  * Read an integer entry from an image object dictionary.
  * @param pdf Document used to resolve dictionary values.
- * @param o PDF object to inspect.
+ * @param pdfObject PDF object to inspect.
  * @param key Dictionary key to retrieve.
- * @param v Receives the resolved integer.
+ * @param parsedValue Receives the resolved integer.
  * @return 1 when the key resolves to an integer; otherwise 0.
  * @author kai
  */
-static int getSize(Pdf *pdf, PdfObject *o, const char *key, size_t *v) {
-    Slice s;
-    return dictValue(o->value, key, &s) == 1 && sizeValue(pdf, s, v);
+static int getSize(Pdf *pdf, PdfObject *pdfObject, const char *key, size_t *parsedValue) {
+    Slice valueSlice;
+    return dictValue(pdfObject->value, key, &valueSlice) == 1 &&
+           sizeValue(pdf, valueSlice, parsedValue);
 }
 /**
  * Read an indirect object identifier from an image dictionary entry.
  * @param pdf Document containing indirect objects.
- * @param o PDF object to inspect.
+ * @param pdfObject PDF object to inspect.
  * @param key Dictionary key to retrieve.
- * @param id Receives the referenced object number.
+ * @param objectId Receives the referenced object number.
  * @return 1 for a live reference with a matching generation; otherwise 0.
  * @author kai
  */
-static int getRef(Pdf *pdf, PdfObject *o, const char *key, unsigned *id) {
-    Slice s;
-    unsigned gen;
-    if (dictValue(o->value, key, &s) != 1 || !reference(s, id, &gen) || *id >= pdf->count ||
-        !pdf->objects[*id].live || pdf->objects[*id].generation != gen)
+static int getRef(Pdf *pdf, PdfObject *pdfObject, const char *key, unsigned *objectId) {
+    Slice valueSlice;
+    PdfReference referenceValue;
+    if (dictValue(pdfObject->value, key, &valueSlice) != 1 ||
+        !reference(valueSlice, &referenceValue) || referenceValue.objectId >= pdf->count ||
+        !pdf->objects[referenceValue.objectId].live ||
+        pdf->objects[referenceValue.objectId].generation != referenceValue.generation) {
         return 0;
+    }
+    *objectId = referenceValue.objectId;
     return 1;
 }
 /* CROSS-REFERENCE VALIDATION*/
 
 /* CROSS REFERENCES*/
-/**
+/*
  * Index classic PDF objects and trailer data; flag structures that cannot be safely rewritten.
  * @param pdf Document state to populate from the source bytes.
  * @return 1 when the PDF structure is accepted; otherwise 0.
  * @author kai
  */
-static int parsePdf(Pdf *pdf) {
-    size_t at, xref = (size_t)-1, i, trailer = 0, trailerEnd;
-    Slice s;
-    size_t count;
+/**
+ * Locate the active classic cross-reference table from the PDF trailer marker.
+ * @param pdf Document source bytes.
+ * @param xref Receives the active xref byte offset.
+ * @return 1 for a supported table, 0 for malformed input, or 2 for unsupported xref streams.
+ * @author kai
+ */
+static int locateXref(Pdf *pdf, size_t *xref) {
+    size_t cursor;
+    size_t itemIndex;
     int found = 0;
-
-    /* VALIDATE THE FILE ENVELOPE*/
-    if (pdf->n < 12 || memcmp(pdf->p, "%PDF-", 5))
+    if (pdf->sourceLength < PDF_MIN_HEADER_LENGTH ||
+        memcmp(pdf->sourceBytes, "%PDF-", PDF_VERSION_MARKER_LENGTH) != 0) {
         return 0;
-    at = pdf->n;
-    while (at && white(pdf->p[at - 1]))
-        at--;
-    if (at < 5 || memcmp(pdf->p + at - 5, "%%EOF", 5))
+    }
+    cursor = pdf->sourceLength;
+    while (cursor && white(pdf->sourceBytes[cursor - 1])) {
+        cursor--;
+    }
+    if (cursor < PDF_EOF_MARKER_LENGTH || memcmp(pdf->sourceBytes + cursor - PDF_EOF_MARKER_LENGTH,
+                                                 "%%EOF", PDF_EOF_MARKER_LENGTH) != 0) {
         return 0;
-
-    /* LOCATE THE ACTIVE CROSS-REFERENCE TABLE*/
-    /* Use the final startxref offset instead of matching object-like bytes inside image streams.*/
-    for (i = at - 5; i > 0; i--)
-        if (token(pdf->p, pdf->n, i, "startxref")) {
-            size_t pos = i + 9;
-            if (uintAt(pdf->p, pdf->n, &pos, &xref)) {
+    }
+    for (itemIndex = cursor - PDF_EOF_MARKER_LENGTH; itemIndex > 0; itemIndex--) {
+        if (token(pdf->sourceBytes, pdf->sourceLength, itemIndex, "startxref")) {
+            ParsedUnsigned parsed = {itemIndex + PDF_STARTXREF_KEYWORD_LENGTH, 0};
+            if (uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+                *xref = parsed.value;
                 found = 1;
                 break;
             }
         }
-    if (!found || xref >= pdf->n)
+    }
+    if (!found || *xref >= pdf->sourceLength) {
         return 0;
-    at = xref;
-    if (!token(pdf->p, pdf->n, at, "xref")) {
+    }
+    if (!token(pdf->sourceBytes, pdf->sourceLength, *xref, "xref")) {
         pdf->unsupported = 1;
-        return 1;
+        return 2;
     }
-    at += 4;
-    /* Find the trailer by traversing the actual xref sections, not binary streams. */
-    {
-        /* FIND THE TRAILER THROUGH XREF SECTIONS*/
-        size_t scan = at;
-        for (;;) {
-            size_t first, n, j, a, b;
-            scan = space(pdf->p, pdf->n, scan);
-            if (token(pdf->p, pdf->n, scan, "trailer")) {
-                trailer = space(pdf->p, pdf->n, scan + 7);
-                break;
-            }
-            if (!uintAt(pdf->p, pdf->n, &scan, &first) || !uintAt(pdf->p, pdf->n, &scan, &n) ||
-                first > 100000 || n > 100000 - first)
-                return 0;
-            for (j = 0; j < n; j++) {
-                if (!uintAt(pdf->p, pdf->n, &scan, &a) || !uintAt(pdf->p, pdf->n, &scan, &b))
-                    return 0;
-                scan = space(pdf->p, pdf->n, scan);
-                if (scan >= pdf->n || (pdf->p[scan] != 'n' && pdf->p[scan] != 'f'))
-                    return 0;
-                scan++;
-            }
-        }
-    }
-
-    /* VALIDATE TRAILER CAPABILITIES*/
-    /* Incremental, hybrid, or encrypted documents use unchanged-source fallback.*/
-    trailerEnd = valueEnd(pdf->p, pdf->n, trailer, 0);
-    if (trailerEnd > pdf->n)
-        return 0;
-    pdf->trailer = (Slice){pdf->p + trailer, trailerEnd - trailer};
-    if (dictValue(pdf->trailer, "/Size", &s) != 1 || !sizeValue(pdf, s, &count) || !count ||
-        count > 100000)
-        return 0;
-    pdf->count = (unsigned)count;
-    if (dictValue(pdf->trailer, "/Prev", &s) == 1 || dictValue(pdf->trailer, "/XRefStm", &s) == 1 ||
-        dictValue(pdf->trailer, "/Encrypt", &s) == 1) {
-        pdf->unsupported = 1;
-        return 1;
-    }
-
-    /* INDEX DECLARED OBJECT LOCATIONS*/
-    pdf->objects = calloc(count, sizeof(*pdf->objects));
-    if (!pdf->objects)
-        return 0;
-    while ((at = space(pdf->p, pdf->n, at)) < trailer) {
-        size_t first, n, j;
-        if (token(pdf->p, pdf->n, at, "trailer"))
-            break;
-        if (!uintAt(pdf->p, pdf->n, &at, &first) || !uintAt(pdf->p, pdf->n, &at, &n) ||
-            first >= count || n > count - first)
-            return 0;
-        for (j = 0; j < n; j++) {
-            size_t offset, gen;
-            PdfObject *o = &pdf->objects[first + j];
-            if (!uintAt(pdf->p, pdf->n, &at, &offset) || !uintAt(pdf->p, pdf->n, &at, &gen) ||
-                gen > 65535)
-                return 0;
-            at = space(pdf->p, pdf->n, at);
-            o->live = pdf->p[at] == 'n';
-            o->offset = offset;
-            o->generation = (unsigned)gen;
-            at++;
-            if (o->live && offset >= xref)
-                return 0;
-        }
-    }
-
-    /* VALIDATE LIVE OBJECT BOUNDARIES*/
-    for (i = 1; i < count; i++)
-        if (pdf->objects[i].live) {
-            PdfObject *o = &pdf->objects[i];
-            size_t pos;
-            if (!objectValue(pdf, (unsigned)i, &o->value))
-                return 0;
-            pos = space(pdf->p, pdf->n, (size_t)(o->value.p - pdf->p) + o->value.n);
-
-            /* BOUND BINARY STREAMS BY THEIR LENGTH*/
-            /* Resolve /Length before seeking terminators; encoded pixels may contain PDF-like*/
-            /* words.*/
-            if (token(pdf->p, pdf->n, pos, "stream")) {
-                pos += 6;
-                if (pos >= pdf->n)
-                    return 0;
-                if (pdf->p[pos] == '\r') {
-                    pos++;
-                    if (pos < pdf->n && pdf->p[pos] == '\n')
-                        pos++;
-                } else if (pdf->p[pos] == '\n')
-                    pos++;
-                else
-                    return 0;
-                o->stream = pos;
-                if (!getSize(pdf, o, "/Length", &o->length) || o->length > pdf->n - pos)
-                    return 0;
-                pos = space(pdf->p, pdf->n, pos + o->length);
-                if (!token(pdf->p, pdf->n, pos, "endstream"))
-                    return 0;
-                pos = space(pdf->p, pdf->n, pos + 9);
-            }
-            if (!token(pdf->p, pdf->n, pos, "endobj"))
-                return 0;
-            o->end = pdf->p + pos;
-
-            /* PRESERVE SIGNED AND PACKED STRUCTURES*/
-            if (dictValue(o->value, "/ByteRange", &s) == 1) {
-                pdf->unsupported = 1;
-                return 1;
-            }
-            if (dictValue(o->value, "/Type", &s) == 1 &&
-                (nameIs(s, "/ObjStm") || nameIs(s, "/XRef"))) {
-                pdf->unsupported = 1;
-                return 1;
-            }
-        }
     return 1;
+}
+
+/**
+ * Traverse classic cross-reference sections and find the trailer dictionary.
+ * @param pdf Document whose xref bytes are being read.
+ * @param xref Byte offset after the xref keyword.
+ * @param trailer Receives the trailer dictionary byte offset.
+ * @return Nonzero for a complete xref traversal.
+ * @author kai
+ */
+static int findTrailer(Pdf *pdf, size_t xref, size_t *trailer) {
+    size_t scan = xref;
+    for (;;) {
+        ParsedUnsigned parsed;
+        size_t first;
+        size_t sourceLength;
+        size_t entryIndex;
+        scan = space(pdf->sourceBytes, pdf->sourceLength, scan);
+        if (token(pdf->sourceBytes, pdf->sourceLength, scan, "trailer")) {
+            *trailer =
+                space(pdf->sourceBytes, pdf->sourceLength, scan + PDF_TRAILER_KEYWORD_LENGTH);
+            return 1;
+        }
+        parsed = (ParsedUnsigned){scan, 0};
+        if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+            return 0;
+        }
+        first = parsed.value;
+        parsed.value = 0;
+        if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+            return 0;
+        }
+        sourceLength = parsed.value;
+        scan = parsed.cursor;
+        if (first > PDF_MAX_OBJECT_COUNT || sourceLength > PDF_MAX_OBJECT_COUNT - first) {
+            return 0;
+        }
+        for (entryIndex = 0; entryIndex < sourceLength; entryIndex++) {
+            parsed = (ParsedUnsigned){scan, 0};
+            if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+                return 0;
+            }
+            parsed.value = 0;
+            if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+                return 0;
+            }
+            scan = space(pdf->sourceBytes, pdf->sourceLength, parsed.cursor);
+            if (scan >= pdf->sourceLength ||
+                (pdf->sourceBytes[scan] != 'n' && pdf->sourceBytes[scan] != 'f')) {
+                return 0;
+            }
+            scan++;
+        }
+    }
+}
+
+/**
+ * Parse and validate trailer capabilities, allocating the declared object table.
+ * @param pdf Document whose trailer is validated.
+ * @param trailer Trailer dictionary byte offset.
+ * @param count Receives the validated number of object slots.
+ * @return 1 for a supported trailer, 2 for an unsupported feature, or 0 if malformed.
+ * @author kai
+ */
+static int prepareTrailer(Pdf *pdf, size_t trailer, size_t *count) {
+    Slice valueSlice;
+    size_t trailerEnd = valueEnd(pdf->sourceBytes, pdf->sourceLength, trailer, 0);
+    if (trailerEnd > pdf->sourceLength) {
+        return 0;
+    }
+    pdf->trailer = (Slice){pdf->sourceBytes + trailer, trailerEnd - trailer};
+    if (dictValue(pdf->trailer, "/Size", &valueSlice) != 1 || !sizeValue(pdf, valueSlice, count) ||
+        !*count || *count > PDF_MAX_OBJECT_COUNT) {
+        return 0;
+    }
+    pdf->count = (unsigned)*count;
+    if (dictValue(pdf->trailer, "/Prev", &valueSlice) == 1 ||
+        dictValue(pdf->trailer, "/XRefStm", &valueSlice) == 1 ||
+        dictValue(pdf->trailer, "/Encrypt", &valueSlice) == 1) {
+        pdf->unsupported = 1;
+        return 2;
+    }
+    pdf->objects = calloc(*count, sizeof(*pdf->objects));
+    return pdf->objects ? 1 : 0;
+}
+
+/**
+ * Validate and store one classic xref entry in the object table.
+ * @param pdf Document receiving object metadata.
+ * @param index Mutable xref cursor and active table offset.
+ * @param objectId Object slot to update.
+ * @return Nonzero when the entry is valid.
+ * @author kai
+ */
+static int readXrefEntry(Pdf *pdf, XrefIndex *index, size_t objectId) {
+    ParsedUnsigned parsed = {index->cursor, 0};
+    size_t offset;
+    size_t generationValue;
+    PdfObject *pdfObject = &pdf->objects[objectId];
+    if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+        return 0;
+    }
+    offset = parsed.value;
+    parsed.value = 0;
+    if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+        return 0;
+    }
+    generationValue = parsed.value;
+    if (generationValue > PDF_MAX_GENERATION) {
+        return 0;
+    }
+    index->cursor = space(pdf->sourceBytes, pdf->sourceLength, parsed.cursor);
+    if (index->cursor >= pdf->sourceLength ||
+        (pdf->sourceBytes[index->cursor] != 'n' && pdf->sourceBytes[index->cursor] != 'f')) {
+        return 0;
+    }
+    pdfObject->live = pdf->sourceBytes[index->cursor] == 'n';
+    pdfObject->offset = offset;
+    pdfObject->generation = (unsigned)generationValue;
+    index->cursor++;
+    return !pdfObject->live || offset < index->xref;
+}
+
+/**
+ * Parse one xref subsection header and store each entry in the object table.
+ * @param pdf Document receiving object metadata.
+ * @param index Mutable xref cursor and active table offset.
+ * @return Nonzero when the subsection range and entries are valid.
+ * @author kai
+ */
+static int readXrefSubsection(Pdf *pdf, XrefIndex *index) {
+    ParsedUnsigned parsed = {index->cursor, 0};
+    size_t first;
+    size_t sourceLength;
+    size_t entryIndex;
+    if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+        return 0;
+    }
+    first = parsed.value;
+    parsed.value = 0;
+    if (!uintAt(pdf->sourceBytes, pdf->sourceLength, &parsed)) {
+        return 0;
+    }
+    sourceLength = parsed.value;
+    index->cursor = parsed.cursor;
+    if (first >= pdf->count || sourceLength > pdf->count - first) {
+        return 0;
+    }
+    for (entryIndex = 0; entryIndex < sourceLength; entryIndex++) {
+        if (!readXrefEntry(pdf, index, first + entryIndex)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/**
+ * Read each classic xref subsection into the allocated object table.
+ * @param pdf Document receiving indexed object offsets.
+ * @param index Mutable subsection cursor and validated trailer/xref offsets.
+ * @return Nonzero when all subsection entries are valid.
+ * @author kai
+ */
+static int indexXrefObjects(Pdf *pdf, XrefIndex *index) {
+    while ((index->cursor = space(pdf->sourceBytes, pdf->sourceLength, index->cursor)) <
+           index->trailer) {
+        if (token(pdf->sourceBytes, pdf->sourceLength, index->cursor, "trailer")) {
+            break;
+        }
+        if (!readXrefSubsection(pdf, index)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/**
+ * Resolve and validate a stream body's line ending, declared length, and terminator.
+ * @param pdf Document source and object table.
+ * @param pdfObject Object whose stream boundary is read.
+ * @param position Cursor at the stream keyword; receives the position after endstream.
+ * @return Nonzero when the bounded stream is valid.
+ * @author kai
+ */
+static int validateStreamBoundary(Pdf *pdf, PdfObject *pdfObject, size_t *position) {
+    *position += PDF_STREAM_KEYWORD_LENGTH;
+    if (*position >= pdf->sourceLength) {
+        return 0;
+    }
+    if (pdf->sourceBytes[*position] == '\r') {
+        (*position)++;
+        if (*position < pdf->sourceLength && pdf->sourceBytes[*position] == '\n') {
+            (*position)++;
+        }
+    } else if (pdf->sourceBytes[*position] == '\n') {
+        (*position)++;
+    } else {
+        return 0;
+    }
+    pdfObject->stream = *position;
+    if (!getSize(pdf, pdfObject, "/Length", &pdfObject->length) ||
+        pdfObject->length > pdf->sourceLength - *position) {
+        return 0;
+    }
+    *position = space(pdf->sourceBytes, pdf->sourceLength, *position + pdfObject->length);
+    if (!token(pdf->sourceBytes, pdf->sourceLength, *position, "endstream")) {
+        return 0;
+    }
+    *position =
+        space(pdf->sourceBytes, pdf->sourceLength, *position + PDF_ENDSTREAM_KEYWORD_LENGTH);
+    return 1;
+}
+
+/**
+ * Validate one live object and report structures that require unchanged-source fallback.
+ * @param pdf Document with indexed object offsets.
+ * @param objectIndex Index of the live object.
+ * @return 1 when valid, 2 when unsupported, or 0 when malformed.
+ * @author kai
+ */
+static int validateOneObject(Pdf *pdf, size_t objectIndex) {
+    PdfObject *pdfObject = &pdf->objects[objectIndex];
+    Slice valueSlice;
+    size_t position;
+    if (!objectValue(pdf, (unsigned)objectIndex, &pdfObject->value)) {
+        return 0;
+    }
+    position = space(pdf->sourceBytes, pdf->sourceLength,
+                     (size_t)(pdfObject->value.sourceBytes - pdf->sourceBytes) +
+                         pdfObject->value.sourceLength);
+    if (token(pdf->sourceBytes, pdf->sourceLength, position, "stream") &&
+        !validateStreamBoundary(pdf, pdfObject, &position)) {
+        return 0;
+    }
+    if (!token(pdf->sourceBytes, pdf->sourceLength, position, "endobj")) {
+        return 0;
+    }
+    pdfObject->end = pdf->sourceBytes + position;
+    if (dictValue(pdfObject->value, "/ByteRange", &valueSlice) == 1 ||
+        (dictValue(pdfObject->value, "/Type", &valueSlice) == 1 &&
+         (nameIs(valueSlice, "/ObjStm") || nameIs(valueSlice, "/XRef")))) {
+        pdf->unsupported = 1;
+        return 2;
+    }
+    return 1;
+}
+
+/**
+ * Validate the boundaries and stream ranges for every live indirect object.
+ * @param pdf Document with indexed object offsets.
+ * @return 1 for valid objects, 2 for unsupported structures, otherwise 0.
+ * @author kai
+ */
+static int validateLiveObjects(Pdf *pdf) {
+    size_t itemIndex;
+    for (itemIndex = 1; itemIndex < pdf->count; itemIndex++) {
+        if (pdf->objects[itemIndex].live) {
+            int status = validateOneObject(pdf, itemIndex);
+            if (status != 1) {
+                return status;
+            }
+        }
+    }
+    return 1;
+}
+
+/**
+ * Validate the PDF cross-reference table, trailer, and live object boundaries.
+ * @param pdf Document state to populate from source bytes.
+ * @return 1 when the document is valid or safely unsupported; otherwise 0.
+ * @author kai
+ */
+static int parsePdf(Pdf *pdf) {
+    size_t cursor;
+    size_t xref = 0;
+    size_t trailer = 0;
+    XrefIndex index;
+    size_t count;
+    int status = locateXref(pdf, &xref);
+    if (status != 1) {
+        return status == 2;
+    }
+    if (!findTrailer(pdf, xref + PDF_XREF_KEYWORD_LENGTH, &trailer)) {
+        return 0;
+    }
+    status = prepareTrailer(pdf, trailer, &count);
+    if (status != 1) {
+        return status == 2;
+    }
+    cursor = xref + PDF_XREF_KEYWORD_LENGTH;
+    index = (XrefIndex){cursor, trailer, xref};
+    if (!indexXrefObjects(pdf, &index)) {
+        return 0;
+    }
+    status = validateLiveObjects(pdf);
+    return status == 2 || status == 1;
 }
 
 /*//////////////////////////////////////////////////
@@ -518,534 +973,1018 @@ IMAGES
 
 /* FILTERS*/
 /**
+ * Decode an ASCII85 PDF string.
+ * @param valueSlice Encoded bytes.
+ * @param out Receives decoded bytes.
+ * @return Nonzero when decoding succeeds.
+ * @author kai
+ */
+static int ascii85(Slice valueSlice, RcBuffer *out);
+/**
+ * Decode an ASCIIHex PDF string.
+ * @param valueSlice Encoded bytes.
+ * @param out Receives decoded bytes.
+ * @return Nonzero when decoding succeeds.
+ * @author kai
+ */
+static int asciiHex(Slice valueSlice, RcBuffer *out);
+
+/**
+ * Resolve and collect the ordered filter names from a PDF object.
+ * @param pdf Document resolving indirect filter values.
+ * @param pdfObject Stream object containing /Filter.
+ * @param items Receives ordered filter-name slices.
+ * @return Number of filters, or -1 for an invalid or excessive list.
+ * @author kai
+ */
+static int collectFilterItems(Pdf *pdf, const PdfObject *pdfObject,
+                              Slice items[PDF_MAX_FILTER_COUNT]) {
+    Slice filter;
+    unsigned count = 0;
+    if (dictValue(pdfObject->value, "/Filter", &filter) != 1) {
+        return 0;
+    }
+    if (!resolve(pdf, &filter)) {
+        return -1;
+    }
+    {
+        size_t cursor = filter.sourceLength && filter.sourceBytes[0] == '[' ? 1 : 0;
+        while ((cursor = space(filter.sourceBytes, filter.sourceLength, cursor)) <
+                   filter.sourceLength &&
+               filter.sourceBytes[cursor] != ']') {
+            size_t end = valueEnd(filter.sourceBytes, filter.sourceLength, cursor, 0);
+            if (end > filter.sourceLength || count == PDF_MAX_FILTER_COUNT) {
+                return -1;
+            }
+            items[count].sourceBytes = filter.sourceBytes + cursor;
+            items[count++].sourceLength = end - cursor;
+            cursor = end;
+        }
+    }
+    return (int)count;
+}
+
+typedef struct {
+    unsigned index;
+    unsigned count;
+    int *jpeg;
+} FilterStep;
+
+/**
+ * Decode one PDF stream filter, preserving DCT data for the JPEG decoder.
+ * @param filter Filter name to apply.
+ * @param current Current stream bytes.
+ * @param next Receives decoded bytes.
+ * @param step Filter position and JPEG output flag.
+ * @return 1 when decoded, 0 when unsupported, or -1 when malformed.
+ * @author kai
+ */
+static int decodeFilterItem(Slice filter, const RcBuffer *current, RcBuffer *next,
+                            FilterStep step) {
+    Slice bytes = {current->data, current->size};
+    int supported = 0;
+    int known = 1;
+    if (nameIs(filter, "/FlateDecode") || nameIs(filter, "/Fl")) {
+        supported = rcInflate(current->data, current->size, next);
+    } else if (nameIs(filter, "/ASCII85Decode") || nameIs(filter, "/A85")) {
+        supported = ascii85(bytes, next);
+    } else if (nameIs(filter, "/ASCIIHexDecode") || nameIs(filter, "/AHx")) {
+        supported = asciiHex(bytes, next);
+    } else if ((nameIs(filter, "/DCTDecode") || nameIs(filter, "/DCT")) &&
+               step.index + 1 == step.count) {
+        *step.jpeg = 1;
+        return 2;
+    } else {
+        known = 0;
+    }
+    if (supported) {
+        return 1;
+    }
+    return known ? -1 : 0;
+}
+
+/**
+ * Append the high-order bytes of a completed ASCII85 tuple.
+ * @param state Decoder state containing the destination buffer.
+ * @param emission Tuple value and number of bytes to append.
+ * @return Nonzero when the value fits and output append succeeds.
+ * @author kai
+ */
+static int appendAscii85Value(Ascii85State *state, Ascii85Emission emission) {
+    unsigned char bytes[PDF_ASCII85_TUPLE_DIGITS - 1];
+    unsigned byteIndex;
+    if (emission.value > UINT32_MAX) {
+        return 0;
+    }
+    for (byteIndex = 0; byteIndex < PDF_ASCII85_TUPLE_DIGITS - 1; byteIndex++) {
+        bytes[byteIndex] =
+            (unsigned char)(emission.value >> ((3U - byteIndex) * (unsigned)PDF_BITS_PER_BYTE));
+    }
+    return rcAppend(state->output, bytes, emission.outputLength);
+}
+
+/**
+ * Pad and append a final partial ASCII85 tuple.
+ * @param state Decoder state containing the output destination and partial tuple.
+ * @return Nonzero when any partial bytes are valid and appended.
+ * @author kai
+ */
+static int appendAscii85Remainder(Ascii85State *state) {
+    unsigned originalCount = state->count;
+    if (!state->count) {
+        return 1;
+    }
+    if (state->count == 1) {
+        return 0;
+    }
+    while (state->count++ < PDF_ASCII85_TUPLE_DIGITS) {
+        state->value = (state->value * PDF_ASCII85_RADIX) + PDF_ASCII85_PADDING_DIGIT;
+    }
+    return appendAscii85Value(state, (Ascii85Emission){state->value, originalCount - 1});
+}
+
+/**
+ * Consume one non-whitespace ASCII85 byte and update its decoder state.
+ * @param state Source, destination, cursor, and tuple state for ASCII85 decoding.
+ * @return Zero for malformed input, one for a consumed byte, or two at the terminator.
+ * @author kai
+ */
+static int consumeAscii85Byte(Ascii85State *state) {
+    unsigned byteValue = state->source.sourceBytes[state->cursor];
+    if (white((unsigned char)byteValue)) {
+        state->cursor++;
+        return 1;
+    }
+    if (byteValue == '~') {
+        if (state->cursor + 1 >= state->source.sourceLength ||
+            state->source.sourceBytes[state->cursor + 1] != '>') {
+            return 0;
+        }
+        state->cursor += 2;
+        state->ended = 1;
+        return 2;
+    }
+    if (byteValue == 'z') {
+        unsigned char zeros[PDF_ASCII85_TUPLE_DIGITS - 1] = {0};
+        if (state->count || !rcAppend(state->output, zeros, sizeof(zeros))) {
+            return 0;
+        }
+        state->cursor++;
+        return 1;
+    }
+    if (byteValue < PDF_ASCII85_MINIMUM || byteValue > PDF_ASCII85_MAXIMUM) {
+        return 0;
+    }
+    state->value = (state->value * PDF_ASCII85_RADIX) + byteValue - PDF_ASCII85_MINIMUM;
+    state->count++;
+    state->cursor++;
+    if (state->count == PDF_ASCII85_TUPLE_DIGITS) {
+        if (!appendAscii85Value(state,
+                                (Ascii85Emission){state->value, PDF_ASCII85_TUPLE_DIGITS - 1})) {
+            return 0;
+        }
+        state->count = 0;
+        state->value = 0;
+    }
+    return 1;
+}
+
+/**
  * Decode an ASCII85 stream into the output buffer.
- * @param s Encoded ASCII85 stream slice.
+ * @param valueSlice Encoded ASCII85 stream slice.
  * @param out Receives decoded stream bytes.
  * @return 1 for a complete valid stream; otherwise 0 for malformed input or allocation failure.
  * @author kai
  */
-static int ascii85(Slice s, RcBuffer *out) {
-    unsigned long value = 0;
-    unsigned count = 0;
-    size_t i;
-    int ended = 0;
-
-    /* DECODE COMPLETE TUPLES*/
-    /* The z shorthand is valid only between tuples; five base-85 digits produce four bytes.*/
-    for (i = 0; i < s.n; i++) {
-        unsigned c = s.p[i];
-        if (white((unsigned char)c))
-            continue;
-        if (c == '~') {
-            if (i + 1 >= s.n || s.p[++i] != '>')
-                return 0;
-            ended = 1;
-            i++;
-            break;
-        }
-        if (c == 'z') {
-            unsigned char zeros[4] = {0};
-            if (count || !rcAppend(out, zeros, 4))
-                return 0;
-            continue;
-        }
-        if (c < 33 || c > 117)
+static int ascii85(Slice valueSlice, RcBuffer *out) {
+    Ascii85State state = {valueSlice, out, 0, 0, 0, 0};
+    int consumed;
+    while (state.cursor < state.source.sourceLength && !state.ended) {
+        consumed = consumeAscii85Byte(&state);
+        if (!consumed) {
             return 0;
-        value = value * 85 + c - 33;
-        count++;
-        if (count == 5) {
-            unsigned char bytes[4];
-            unsigned k;
-            if (value > 0xffffffffUL)
-                return 0;
-            for (k = 0; k < 4; k++)
-                bytes[k] = (unsigned char)(value >> (24 - k * 8));
-            if (!rcAppend(out, bytes, 4))
-                return 0;
-            count = 0;
-            value = 0;
         }
     }
-
-    /* VALIDATE THE TERMINATOR*/
-    if (!ended || count == 1)
+    if (!state.ended) {
         return 0;
-    while (i < s.n)
-        if (!white(s.p[i++]))
-            return 0;
-
-    /* DECODE THE FINAL PARTIAL TUPLE*/
-    /* Pad with the largest digit and emit one fewer byte than the original digit count.*/
-    if (count) {
-        unsigned char bytes[4];
-        unsigned k, original = count;
-        while (count++ < 5)
-            value = value * 85 + 84;
-        if (value > 0xffffffffUL)
-            return 0;
-        for (k = 0; k < 4; k++)
-            bytes[k] = (unsigned char)(value >> (24 - k * 8));
-        if (!rcAppend(out, bytes, original - 1))
-            return 0;
     }
-    return 1;
+    while (state.cursor < state.source.sourceLength) {
+        if (!white(state.source.sourceBytes[state.cursor++])) {
+            return 0;
+        }
+    }
+    return appendAscii85Remainder(&state);
 }
 /**
  * Convert one hexadecimal character to its numeric value.
- * @param c ASCII character expected to be a hexadecimal digit.
+ * @param byteValue ASCII character expected to be a hexadecimal digit.
  * @return Value from 0 through 15, or -1 when c is not hexadecimal.
  * @author kai
  */
-static int hexDigit(unsigned c) {
-    if (c >= '0' && c <= '9')
-        return (int)c - '0';
-    if (c >= 'A' && c <= 'F')
-        return (int)c - 'A' + 10;
-    if (c >= 'a' && c <= 'f')
-        return (int)c - 'a' + 10;
+static int hexDigit(unsigned byteValue) {
+    if (byteValue >= '0' && byteValue <= '9') {
+        return (int)byteValue - '0';
+    }
+    if (byteValue >= 'A' && byteValue <= 'F') {
+        return (int)byteValue - 'A' + PDF_DECIMAL_RADIX;
+    }
+    if (byteValue >= 'a' && byteValue <= 'f') {
+        return (int)byteValue - 'a' + PDF_DECIMAL_RADIX;
+    }
     return -1;
 }
 /**
  * Decode a PDF ASCIIHex stream, accepting its optional terminator.
- * @param s Encoded ASCIIHex stream slice.
+ * @param valueSlice Encoded ASCIIHex stream slice.
  * @param out Receives decoded stream bytes.
  * @return 1 for a valid terminated stream; otherwise 0 for invalid input or allocation failure.
  * @author kai
  */
-static int asciiHex(Slice s, RcBuffer *out) {
+static int asciiHex(Slice valueSlice, RcBuffer *out) {
     int prior = -1;
-    size_t i;
-    for (i = 0; i < s.n; i++) {
-        int v;
-        if (white(s.p[i]))
+    size_t itemIndex;
+    for (itemIndex = 0; itemIndex < valueSlice.sourceLength; itemIndex++) {
+        int parsedValue;
+        if (white(valueSlice.sourceBytes[itemIndex])) {
             continue;
-        if (s.p[i] == '>')
+        }
+        if (valueSlice.sourceBytes[itemIndex] == '>') {
             break;
-        v = hexDigit(s.p[i]);
-        if (v < 0)
+        }
+        parsedValue = hexDigit(valueSlice.sourceBytes[itemIndex]);
+        if (parsedValue < 0) {
             return 0;
-        if (prior < 0)
-            prior = v;
-        else {
-            unsigned char c = (unsigned char)(prior * 16 + v);
-            if (!rcAppend(out, &c, 1))
+        }
+        if (prior < 0) {
+            prior = parsedValue;
+        } else {
+            unsigned char byteValue = (unsigned char)((prior * PDF_HEX_RADIX) + parsedValue);
+            if (!rcAppend(out, &byteValue, 1)) {
                 return 0;
+            }
             prior = -1;
         }
     }
-    if (i == s.n)
+    if (itemIndex == valueSlice.sourceLength) {
         return 0;
+    }
     if (prior >= 0) {
-        unsigned char c = (unsigned char)(prior * 16);
-        if (!rcAppend(out, &c, 1))
+        unsigned char byteValue = (unsigned char)(prior * PDF_HEX_RADIX);
+        if (!rcAppend(out, &byteValue, 1)) {
             return 0;
+        }
     }
     return 1;
 }
 /**
  * Decode supported PDF stream filters and report whether the result is JPEG data.
  * @param pdf Document used to resolve filter parameters.
- * @param o PDF object whose stream filters are decoded.
+ * @param pdfObject PDF object whose stream filters are decoded.
  * @param out Receives decoded stream bytes.
  * @param jpeg Set when the final stream is JPEG/DCT encoded.
  * @return 1 on success, 0 for unsupported filters, -1 for corrupt supported encodings.
  * @author kai
  */
-static int decodeFilters(Pdf *pdf, PdfObject *o, RcBuffer *out, int *jpeg) {
-    Slice filter, items[8];
-    unsigned count = 0, i;
+static int decodeFilters(Pdf *pdf, PdfObject *pdfObject, RcBuffer *out, int *jpeg) {
+    Slice items[PDF_MAX_FILTER_COUNT];
+    int collectedCount;
+    unsigned count;
+    unsigned itemIndex;
     RcBuffer current = {0};
-    int ok = 0;
+    int successStatus = 0;
     *jpeg = 0;
 
     /* RESOLVE THE ORDERED FILTER LIST*/
-    if (dictValue(o->value, "/Filter", &filter) == 1) {
-        size_t at = 0;
-        if (!resolve(pdf, &filter))
-            return 0;
-        if (filter.n && filter.p[0] == '[')
-            at = 1;
-        while ((at = space(filter.p, filter.n, at)) < filter.n && filter.p[at] != ']') {
-            size_t end = valueEnd(filter.p, filter.n, at, 0);
-            if (end > filter.n || count == 8)
-                return 0;
-            items[count].p = filter.p + at;
-            items[count++].n = end - at;
-            at = end;
-        }
+    collectedCount = collectFilterItems(pdf, pdfObject, items);
+    if (collectedCount < 0) {
+        return 0;
     }
-    if (!rcAppend(&current, pdf->p + o->stream, o->length))
+    count = (unsigned)collectedCount;
+    if (!rcAppend(&current, pdf->sourceBytes + pdfObject->stream, pdfObject->length)) {
         goto done;
+    }
 
     /* DECODE FILTERS IN DECLARED ORDER*/
     /* DCT remains encoded until the shared JPEG decoder receives its byte stream.*/
-    for (i = 0; i < count; i++) {
+    for (itemIndex = 0; itemIndex < count; itemIndex++) {
         RcBuffer next = {0};
-        Slice bytes = {current.data, current.size};
-        int supported = 0, known = 1;
-        if (nameIs(items[i], "/FlateDecode") || nameIs(items[i], "/Fl"))
-            supported = rcInflate(current.data, current.size, &next);
-        else if (nameIs(items[i], "/ASCII85Decode") || nameIs(items[i], "/A85"))
-            supported = ascii85(bytes, &next);
-        else if (nameIs(items[i], "/ASCIIHexDecode") || nameIs(items[i], "/AHx"))
-            supported = asciiHex(bytes, &next);
-        else if ((nameIs(items[i], "/DCTDecode") || nameIs(items[i], "/DCT")) && i + 1 == count) {
-            *jpeg = 1;
+        int result = decodeFilterItem(items[itemIndex], &current, &next,
+                                      (FilterStep){itemIndex, count, jpeg});
+        if (result == 2) {
             break;
-        } else
-            known = 0;
+        }
 
         /* DISTINGUISH UNSUPPORTED DATA FROM CORRUPTION*/
-        if (!supported) {
+        if (result != 1) {
             free(next.data);
-            ok = known ? -1 : 0;
+            successStatus = result;
             goto done;
         }
         free(current.data);
         current = next;
     }
     *out = current;
-    memset(&current, 0, sizeof(current));
-    ok = 1;
+    current = (RcBuffer){0};
+    successStatus = 1;
 done:
     free(current.data);
-    return ok;
+    return successStatus;
 }
 
 /* SAMPLE LAYOUT*/
+typedef struct {
+    size_t predictor;
+    size_t rowBytes;
+    size_t bytesPerPixel;
+} PredictorLayout;
+
 /**
- * Reverse a PDF/PNG predictor using the image geometry and dictionary parameters.
- * @param pdf Document used to resolve DecodeParms values.
- * @param o Image object containing predictor parameters.
- * @param data Flate-decoded bytes, replaced with reconstructed samples.
- * @param w Image width in pixels.
- * @param h Image height in rows.
- * @param channels Samples per pixel.
- * @param bits Bits per sample.
- * @return 1 when samples are reconstructed or no predictor is present; otherwise 0.
+ * Select the first dictionary from an optional DecodeParms array.
+ * @param parameters DecodeParms value, possibly replaced with its first dictionary.
+ * @return 1 when a dictionary is selected, 0 when the array has none, or -1 when malformed.
  * @author kai
  */
-static int predictor(Pdf *pdf, PdfObject *o, RcBuffer *data, unsigned w, unsigned h,
-                     unsigned channels, unsigned bits) {
-    Slice parms, s;
-    size_t pred = 1, columns = w, colors = channels, bpc = bits;
-    size_t row = ((size_t)w * channels * bits + 7) / 8, bpp = (channels * bits + 7) / 8, y, x;
-
-    /* RESOLVE PREDICTOR SETTINGS*/
-    if (dictValue(o->value, "/DecodeParms", &parms) != 1)
-        return 1;
-    if (!resolve(pdf, &parms))
-        return 0;
-    if (parms.n && parms.p[0] == '[') {
-        size_t at = 1;
-        int found = 0;
-        while ((at = space(parms.p, parms.n, at)) < parms.n && parms.p[at] != ']') {
-            size_t end = valueEnd(parms.p, parms.n, at, 0);
-            if (end > parms.n)
-                return 0;
-            if (parms.p[at] == '<') {
-                Slice chosen = {parms.p + at, end - at};
-                parms = chosen;
-                found = 1;
-                break;
-            }
-            at = end;
+static int selectPredictorDictionary(Slice *parameters) {
+    size_t cursor = 1;
+    while ((cursor = space(parameters->sourceBytes, parameters->sourceLength, cursor)) <
+               parameters->sourceLength &&
+           parameters->sourceBytes[cursor] != ']') {
+        size_t end = valueEnd(parameters->sourceBytes, parameters->sourceLength, cursor, 0);
+        if (end > parameters->sourceLength) {
+            return -1;
         }
-        if (!found)
+        if (parameters->sourceBytes[cursor] == '<') {
+            *parameters = (Slice){parameters->sourceBytes + cursor, end - cursor};
             return 1;
+        }
+        cursor = end;
     }
-    if (parms.n < 2 || parms.p[0] != '<')
-        return nameIs(parms, "null");
-    if (dictValue(parms, "/Predictor", &s) == 1 && !sizeValue(pdf, s, &pred))
-        return 0;
+    return 0;
+}
 
-    /* RESOLVE THE ACTIVE SAMPLE LAYOUT*/
-    /* An omitted predictor means the decoded stream already contains raw rows.*/
-    if (pred == 1)
-        return 1;
-    if (dictValue(parms, "/Columns", &s) == 1 && !sizeValue(pdf, s, &columns))
-        return 0;
-    if (dictValue(parms, "/Colors", &s) == 1 && !sizeValue(pdf, s, &colors))
-        return 0;
-    if (dictValue(parms, "/BitsPerComponent", &s) == 1 && !sizeValue(pdf, s, &bpc))
-        return 0;
+/**
+ * Read an optional positive integer from predictor parameters.
+ * @param pdf Document resolving an indirect integer value.
+ * @param parameters Predictor dictionary.
+ * @param key Dictionary key.
+ * @param value Receives the decoded integer when the key exists.
+ * @return Nonzero when the key is absent or has a valid integer value.
+ * @author kai
+ */
+static int readOptionalPredictorSize(Pdf *pdf, Slice parameters, const char *key, size_t *value) {
+    Slice item;
+    return dictValue(parameters, key, &item) != 1 || sizeValue(pdf, item, value);
+}
 
-    /* VALIDATE ROW GEOMETRY*/
-    if (columns != w || colors != channels || bpc != bits)
-        return 0;
-
-    /* REVERSE TIFF SAMPLE DIFFERENCES*/
-    /* Work in sample units, including packed and sixteen-bit components.*/
-    if (pred == 2) {
-        if (data->size != row * h)
-            return 0;
-        for (y = 0; y < h; y++)
-            for (x = channels; x < (size_t)w * channels; x++) {
-                unsigned char *r = data->data + y * row;
-                unsigned value =
-                    (rcSample(r, x, bits) + rcSample(r, x - channels, bits)) & ((1U << bits) - 1);
-                if (bits == 8)
-                    r[x] = (unsigned char)value;
-                else if (bits == 16) {
-                    r[x * 2] = (unsigned char)(value >> 8);
-                    r[x * 2 + 1] = (unsigned char)value;
-                } else {
-                    size_t index = x * bits / 8;
-                    unsigned shift = 8 - bits - x * bits % 8, mask = ((1U << bits) - 1) << shift;
-                    r[index] = (unsigned char)((r[index] & ~mask) | (value << shift));
-                }
-            }
+/**
+ * Resolve predictor settings and verify they match decoded image geometry.
+ * @param pdf Document resolving indirect predictor values.
+ * @param pdfObject Image stream with DecodeParms.
+ * @param shape Image dimensions and sample layout.
+ * @param layout Receives predictor type, row length, and bytes per pixel.
+ * @return Nonzero when settings are valid.
+ * @author kai
+ */
+static int resolvePredictorLayout(Pdf *pdf, PdfObject *pdfObject, PredictorShape shape,
+                                  PredictorLayout *layout) {
+    Slice parameters;
+    layout->predictor = 1;
+    if (dictValue(pdfObject->value, "/DecodeParms", &parameters) != 1) {
         return 1;
     }
-
-    /* REVERSE PNG BYTE FILTERS*/
-    /* Each encoded row begins with a filter byte before its pixel bytes.*/
-    if (pred < 10 || pred > 15 || data->size != (row + 1) * h)
+    if (!resolve(pdf, &parameters)) {
         return 0;
-    for (y = 0; y < h; y++) {
-        unsigned filter = data->data[y * (row + 1)];
-        unsigned char *decoded = data->data + y * row;
-        /* Compact away the filter byte; earlier decoded rows cannot overlap unread input.*/
-        memmove(decoded, data->data + y * (row + 1) + 1, row);
-        if (!rcUnfilter(decoded, y ? decoded - row : NULL, row, bpp, filter))
-            return 0;
     }
-    data->size = row * h;
+    if (parameters.sourceLength && parameters.sourceBytes[0] == '[') {
+        int selected = selectPredictorDictionary(&parameters);
+        if (selected < 0) {
+            return 0;
+        }
+        if (!selected) {
+            return 1;
+        }
+    }
+    if (parameters.sourceLength < 2 || parameters.sourceBytes[0] != '<') {
+        return nameIs(parameters, "null");
+    }
+    if (!readOptionalPredictorSize(pdf, parameters, "/Predictor", &layout->predictor)) {
+        return 0;
+    }
+    if (layout->predictor == 1) {
+        return 1;
+    }
+    {
+        size_t columns = shape.width;
+        size_t colors = shape.channels;
+        size_t bitsPerComponent = shape.bitsPerSample;
+        if (!readOptionalPredictorSize(pdf, parameters, "/Columns", &columns) ||
+            !readOptionalPredictorSize(pdf, parameters, "/Colors", &colors) ||
+            !readOptionalPredictorSize(pdf, parameters, "/BitsPerComponent", &bitsPerComponent) ||
+            columns != shape.width || colors != shape.channels ||
+            bitsPerComponent != shape.bitsPerSample) {
+            return 0;
+        }
+    }
+    layout->rowBytes =
+        (((size_t)shape.width * shape.channels * shape.bitsPerSample) + (PDF_BITS_PER_BYTE - 1)) /
+        PDF_BITS_PER_BYTE;
+    layout->bytesPerPixel =
+        ((shape.channels * shape.bitsPerSample) + (PDF_BITS_PER_BYTE - 1)) / PDF_BITS_PER_BYTE;
     return 1;
 }
 
+/**
+ * Reverse TIFF horizontal differencing for one decoded image.
+ * @param data Flate-decoded samples, updated in place.
+ * @param shape Image dimensions and sample layout.
+ * @param layout Predictor type and row geometry.
+ * @return Nonzero when every sample row is valid and reconstructed.
+ * @author kai
+ */
+static int reverseTiffPredictor(RcBuffer *data, PredictorShape shape, PredictorLayout layout) {
+    size_t rowIndex;
+    size_t columnIndex;
+    unsigned bits = shape.bitsPerSample;
+    unsigned channels = shape.channels;
+    if (data->size != layout.rowBytes * shape.height) {
+        return 0;
+    }
+    for (rowIndex = 0; rowIndex < shape.height; rowIndex++) {
+        unsigned char *rowData = data->data + (rowIndex * layout.rowBytes);
+        for (columnIndex = channels; columnIndex < (size_t)shape.width * channels; columnIndex++) {
+            unsigned value = (rcSample(rowData, columnIndex, bits) +
+                              rcSample(rowData, columnIndex - channels, bits)) &
+                             ((1U << bits) - 1);
+            if (bits == PDF_BITS_PER_BYTE) {
+                rowData[columnIndex] = (unsigned char)value;
+            } else if (bits == 2 * PDF_BITS_PER_BYTE) {
+                rowData[columnIndex * 2] = (unsigned char)(value >> (unsigned)PDF_BITS_PER_BYTE);
+                rowData[(columnIndex * 2) + 1] = (unsigned char)value;
+            } else {
+                size_t index = columnIndex * bits / PDF_BITS_PER_BYTE;
+                unsigned shift =
+                    PDF_BITS_PER_BYTE - bits - (columnIndex * bits % PDF_BITS_PER_BYTE);
+                unsigned mask = ((1U << bits) - 1) << shift;
+                rowData[index] = (unsigned char)((rowData[index] & ~mask) | (value << shift));
+            }
+        }
+    }
+    return 1;
+}
+
+/**
+ * Reverse PNG byte filters in a predictor-encoded image.
+ * @param data Flate-decoded filter bytes, updated in place.
+ * @param shape Image dimensions and sample layout.
+ * @param layout Predictor type and row geometry.
+ * @return Nonzero when every row filter is supported.
+ * @author kai
+ */
+static int reversePngPredictor(RcBuffer *data, PredictorShape shape, PredictorLayout layout) {
+    size_t rowIndex;
+    if (layout.predictor < PNG_PREDICTOR_MINIMUM || layout.predictor > PNG_PREDICTOR_MAXIMUM ||
+        data->size != (layout.rowBytes + 1) * shape.height) {
+        return 0;
+    }
+    for (rowIndex = 0; rowIndex < shape.height; rowIndex++) {
+        unsigned filter = data->data[rowIndex * (layout.rowBytes + 1)];
+        unsigned char *decoded = data->data + (rowIndex * layout.rowBytes);
+        movePdfBytes(decoded, data->data + (rowIndex * (layout.rowBytes + 1)) + 1, layout.rowBytes);
+        if (!rcUnfilter(decoded, rowIndex ? decoded - layout.rowBytes : NULL,
+                        (RcUnfilterOptions){layout.rowBytes, layout.bytesPerPixel, filter})) {
+            return 0;
+        }
+    }
+    data->size = layout.rowBytes * shape.height;
+    return 1;
+}
+
+/**
+ * Reverse a PDF/PNG predictor using the image geometry and dictionary parameters.
+ * @param pdf Document used to resolve DecodeParms values.
+ * @param pdfObject Image object containing predictor parameters.
+ * @param data Flate-decoded bytes, replaced with reconstructed samples.
+ * @param shape Image width, height, channel count, and bits per sample.
+ * @return 1 when samples are reconstructed or no predictor is present; otherwise 0.
+ * @author kai
+ */
+static int predictor(Pdf *pdf, PdfObject *pdfObject, RcBuffer *data, PredictorShape shape) {
+    PredictorLayout layout = {1, 0, 0};
+    if (!resolvePredictorLayout(pdf, pdfObject, shape, &layout)) {
+        return 0;
+    }
+    if (layout.predictor == 1) {
+        return 1;
+    }
+    if (layout.predictor == 2) {
+        return reverseTiffPredictor(data, shape, layout);
+    }
+    return reversePngPredictor(data, shape, layout);
+}
+
 /* IMAGE OBJECTS*/
+typedef struct {
+    size_t width;
+    size_t height;
+    size_t bits;
+    unsigned channels;
+    unsigned indexed;
+    unsigned high;
+} PdfImageSampleLayout;
+typedef struct {
+    unsigned channels;
+    unsigned indexed;
+    unsigned high;
+    unsigned char lookup[PDF_RGB_LOOKUP_CAPACITY];
+} PdfImageColor;
+/**
+ * Parse an optional PDF Decode array into per-channel output ranges.
+ * @param pdf Document used to resolve indirect values.
+ * @param pdfObject Image dictionary containing Decode.
+ * @param layout PDF image sample layout.
+ * @param ranges Receives the channel ranges.
+ * @return Nonzero when the array is valid or absent.
+ * @author kai
+ */
+static int readPdfDecodeRanges(Pdf *pdf, PdfObject *pdfObject, PdfImageSampleLayout layout,
+                               double ranges[3][2]) {
+    Slice decode = {0};
+    size_t cursor = 1;
+    unsigned channelIndex;
+    if (dictValue(pdfObject->value, "/Decode", &decode) != 1) {
+        return 1;
+    }
+    if (!resolve(pdf, &decode) || decode.sourceLength == 0 || decode.sourceBytes[0] != '[' ||
+        layout.indexed) {
+        return 0;
+    }
+    for (channelIndex = 0; channelIndex < layout.channels; channelIndex++) {
+        unsigned endpoint;
+        for (endpoint = 0; endpoint < 2; endpoint++) {
+            char *end;
+            cursor = space(decode.sourceBytes, decode.sourceLength, cursor);
+            ranges[channelIndex][endpoint] =
+                strtod((const char *)decode.sourceBytes + cursor, &end);
+            if ((const unsigned char *)end == decode.sourceBytes + cursor ||
+                (const unsigned char *)end > decode.sourceBytes + decode.sourceLength ||
+                !isfinite(ranges[channelIndex][endpoint])) {
+                return 0;
+            }
+            cursor = (size_t)((const unsigned char *)end - decode.sourceBytes);
+        }
+    }
+    return 1;
+}
+
+/**
+ * Expand one PDF pixel from packed samples and colour metadata.
+ * @param pixel Receives one RGBA pixel.
+ * @param rowData Packed sample row.
+ * @param columnIndex Pixel index within the row.
+ * @param layout PDF image sample layout.
+ * @param lookup Indexed RGB palette.
+ * @param ranges Direct colour decode ranges.
+ * @return Nonzero when the pixel sample is valid.
+ * @author kai
+ */
+static int expandPdfPixel(unsigned char *pixel, const unsigned char *rowData, size_t columnIndex,
+                          PdfImageSampleLayout layout, const unsigned char *lookup,
+                          double ranges[3][2]) {
+    unsigned values[3] = {0};
+    unsigned itemIndex;
+    for (itemIndex = 0; itemIndex < layout.channels; itemIndex++) {
+        values[itemIndex] =
+            rcSample(rowData, (columnIndex * layout.channels) + itemIndex, (unsigned)layout.bits);
+    }
+    pixel[3] = PDF_SAMPLE_MAXIMUM;
+    if (layout.indexed) {
+        if (values[0] > layout.high) {
+            return 0;
+        }
+        copyPdfBytes(pixel, lookup + ((size_t)values[0] * 3), 3);
+        return 1;
+    }
+    for (itemIndex = 0; itemIndex < layout.channels; itemIndex++) {
+        double value = (ranges[itemIndex][0] +
+                        (values[itemIndex] * (ranges[itemIndex][1] - ranges[itemIndex][0]) /
+                         ((1U << layout.bits) - 1))) *
+                       PDF_SAMPLE_MAXIMUM;
+        if (value < 0) {
+            value = 0;
+        }
+        if (value > PDF_SAMPLE_MAXIMUM) {
+            value = PDF_SAMPLE_MAXIMUM;
+        }
+        pixel[itemIndex] = (unsigned char)floor(value + PDF_SAMPLE_ROUNDING_BIAS);
+    }
+    if (layout.channels == 1) {
+        pixel[1] = pixel[2] = pixel[0];
+    }
+    return 1;
+}
+
+/**
+ * Expand unpacked PDF samples into the output RGBA image.
+ * @param image Output image storage.
+ * @param data Decoded packed samples.
+ * @param layout PDF image sample layout.
+ * @param lookup Indexed RGB palette.
+ * @param ranges Direct colour decode ranges.
+ * @return Nonzero when all samples are valid.
+ * @author kai
+ */
+static int expandPdfSamples(RcImage *image, const RcBuffer *data, PdfImageSampleLayout layout,
+                            const unsigned char *lookup, double ranges[3][2]) {
+    size_t rowBytes = ((layout.width * layout.channels * layout.bits) + (PDF_BITS_PER_BYTE - 1)) /
+                      PDF_BITS_PER_BYTE;
+    size_t rowIndex;
+    for (rowIndex = 0; rowIndex < layout.height; rowIndex++) {
+        size_t columnIndex;
+        for (columnIndex = 0; columnIndex < layout.width; columnIndex++) {
+            unsigned char *pixel = image->rgba + (((rowIndex * layout.width) + columnIndex) * 4);
+            const unsigned char *rowData = data->data + (rowIndex * rowBytes);
+            if (!expandPdfPixel(pixel, rowData, columnIndex, layout, lookup, ranges)) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/**
+ * Decode an indexed colour lookup from a stream reference or inline hex string.
+ * @param pdf Document used to resolve lookup references.
+ * @param entry Lookup object or hex value.
+ * @param high Highest indexed colour.
+ * @param lookup Receives RGB lookup bytes.
+ * @return Nonzero when the lookup has the required number of bytes.
+ * @author kai
+ */
+static int loadPdfLookup(Pdf *pdf, Slice entry, unsigned high,
+                         unsigned char lookup[PDF_RGB_LOOKUP_CAPACITY]) {
+    RcBuffer lut = {0};
+    int decoded = 0;
+    int jpegLookup = 0;
+    PdfReference referenceValue;
+    if (reference(entry, &referenceValue)) {
+        unsigned objectId = referenceValue.objectId;
+        decoded = objectId < pdf->count &&
+                  decodeFilters(pdf, &pdf->objects[objectId], &lut, &jpegLookup) == 1 &&
+                  !jpegLookup;
+    } else if (entry.sourceLength >= 2 && entry.sourceBytes[0] == '<' &&
+               entry.sourceBytes[1] != '<') {
+        Slice bytes = {entry.sourceBytes + 1, entry.sourceLength - 1};
+        decoded = asciiHex(bytes, &lut);
+    }
+    if (!decoded || lut.size != (size_t)(high + 1) * PDF_RGB_LOOKUP_CHANNELS ||
+        lut.size > PDF_RGB_LOOKUP_CAPACITY) {
+        free(lut.data);
+        return 0;
+    }
+    copyPdfBytes(lookup, lut.data, lut.size);
+    free(lut.data);
+    return 1;
+}
+
+/**
+ * Resolve a supported indexed DeviceRGB colour space.
+ * @param pdf Document used to resolve lookup data.
+ * @param color Indexed colour-space array.
+ * @param result Receives channel and palette metadata.
+ * @return Nonzero when the indexed colour space is supported.
+ * @author kai
+ */
+static int readPdfIndexedColor(Pdf *pdf, Slice color, PdfImageColor *result) {
+    size_t cursor = space(color.sourceBytes, color.sourceLength, 1);
+    size_t end = valueEnd(color.sourceBytes, color.sourceLength, cursor, 0);
+    Slice entry;
+    ParsedUnsigned parsed;
+    if (end > color.sourceLength) {
+        return 0;
+    }
+    entry = (Slice){color.sourceBytes + cursor, end - cursor};
+    if (!nameIs(entry, "/Indexed")) {
+        return 0;
+    }
+    cursor = space(color.sourceBytes, color.sourceLength, end);
+    end = valueEnd(color.sourceBytes, color.sourceLength, cursor, 0);
+    if (end > color.sourceLength) {
+        return 0;
+    }
+    entry = (Slice){color.sourceBytes + cursor, end - cursor};
+    if (!nameIs(entry, "/DeviceRGB")) {
+        return 0;
+    }
+    cursor = space(color.sourceBytes, color.sourceLength, end);
+    parsed = (ParsedUnsigned){cursor, 0};
+    if (!uintAt(color.sourceBytes, color.sourceLength, &parsed) ||
+        parsed.value > PDF_SAMPLE_MAXIMUM) {
+        return 0;
+    }
+    result->high = (unsigned)parsed.value;
+    cursor = space(color.sourceBytes, color.sourceLength, parsed.cursor);
+    end = valueEnd(color.sourceBytes, color.sourceLength, cursor, 0);
+    if (end > color.sourceLength) {
+        return 0;
+    }
+    entry = (Slice){color.sourceBytes + cursor, end - cursor};
+    if (!loadPdfLookup(pdf, entry, result->high, result->lookup)) {
+        return 0;
+    }
+    result->channels = 1;
+    result->indexed = 1;
+    return 1;
+}
+
+/**
+ * Resolve DeviceRGB, DeviceGray, or Indexed PDF image colour metadata.
+ * @param pdf Document used to resolve indirect colour values.
+ * @param color Resolved colour-space value.
+ * @param result Receives channel and palette metadata.
+ * @return Nonzero when the colour space is supported.
+ * @author kai
+ */
+static int readPdfImageColor(Pdf *pdf, Slice color, PdfImageColor *result) {
+    if (nameIs(color, "/DeviceRGB")) {
+        result->channels = PDF_RGB_LOOKUP_CHANNELS;
+        return 1;
+    }
+    if (nameIs(color, "/DeviceGray")) {
+        result->channels = 1;
+        return 1;
+    }
+    return color.sourceLength > 2 && color.sourceBytes[0] == '[' &&
+           readPdfIndexedColor(pdf, color, result);
+}
+
+/**
+ * Apply a PDF colour-key mask against the original packed samples.
+ * @param pdf Document used to resolve the mask array.
+ * @param pdfObject Image object containing the mask.
+ * @param image Decoded image whose alpha channel is updated.
+ * @param data Original packed samples.
+ * @param layout PDF image sample layout.
+ * @param jpeg Whether the image uses JPEG encoding.
+ * @return Nonzero when no mask is present or the mask is applied.
+ * @author kai
+ */
+static int applyPdfColorKey(Pdf *pdf, PdfObject *pdfObject, RcImage *image, const RcBuffer *data,
+                            PdfImageSampleLayout layout, int jpeg) {
+    Slice mask = {0};
+    size_t row = ((layout.width * layout.channels * layout.bits) + (PDF_BITS_PER_BYTE - 1)) /
+                 PDF_BITS_PER_BYTE;
+    size_t limits[PDF_COLOR_KEY_RANGE_COUNT] = {0};
+    size_t cursor = 1;
+    size_t rowIndex;
+    unsigned index;
+    if (dictValue(pdfObject->value, "/Mask", &mask) != 1) {
+        return 1;
+    }
+    if (!resolve(pdf, &mask) || !mask.sourceLength || mask.sourceBytes[0] != '[' || jpeg) {
+        return 0;
+    }
+    {
+        ParsedUnsigned parsed = {cursor, 0};
+        for (index = 0; index < layout.channels * 2; index++) {
+            parsed.cursor = cursor;
+            if (!uintAt(mask.sourceBytes, mask.sourceLength, &parsed)) {
+                return 0;
+            }
+            cursor = parsed.cursor;
+            limits[index] = parsed.value;
+        }
+    }
+    for (rowIndex = 0; rowIndex < layout.height; rowIndex++) {
+        size_t columnIndex;
+        for (columnIndex = 0; columnIndex < layout.width; columnIndex++) {
+            int transparent = 1;
+            for (index = 0; index < layout.channels; index++) {
+                unsigned value =
+                    rcSample(data->data + (rowIndex * row), (columnIndex * layout.channels) + index,
+                             (unsigned)layout.bits);
+                if (value < limits[(size_t)index * 2] || value > limits[((size_t)index * 2) + 1]) {
+                    transparent = 0;
+                }
+            }
+            if (transparent) {
+                image->rgba[(((rowIndex * layout.width) + columnIndex) * 4) + 3] = 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/**
+ * Decode JPEG bytes from a PDF image and validate the declared dimensions.
+ * @param data JPEG payload.
+ * @param image Receives decoded pixels.
+ * @param layout Declared width and height.
+ * @return 1 for a matching image, -1 for invalid encoded data.
+ * @author kai
+ */
+static int decodePdfJpegImage(const RcBuffer *data, RcImage *image, PdfImageSampleLayout layout) {
+    if (!rcJpeg(data->data, data->size, image, 0) || image->width != layout.width ||
+        image->height != layout.height) {
+        return -1;
+    }
+    return 1;
+}
+
+/**
+ * Validate and decode raw PDF samples into RGBA pixels.
+ * @param pdf Document used to resolve predictor and Decode parameters.
+ * @param pdfObject Image dictionary.
+ * @param image Receives the decoded raster.
+ * @param data Filter-decoded packed samples.
+ * @param layout Image dimensions and colour metadata; bits is updated from the dictionary.
+ * @param lookup Indexed RGB palette.
+ * @return Nonzero when the raw samples form a valid image.
+ * @author kai
+ */
+static int decodePdfRawImage(Pdf *pdf, PdfObject *pdfObject, RcImage *image, RcBuffer *data,
+                             PdfImageSampleLayout *layout,
+                             const unsigned char lookup[PDF_RGB_LOOKUP_CAPACITY]) {
+    double ranges[3][2] = {{0, 1}, {0, 1}, {0, 1}};
+    size_t row;
+    if (!getSize(pdf, pdfObject, "/BitsPerComponent", &layout->bits) ||
+        (layout->bits != 1 && layout->bits != 2 && layout->bits != 4 &&
+         layout->bits != PDF_BITS_PER_BYTE && layout->bits != PDF_SIXTEEN_BITS) ||
+        !predictor(pdf, pdfObject, data,
+                   (PredictorShape){
+                       (unsigned)layout->width,
+                       (unsigned)layout->height,
+                       layout->channels,
+                       (unsigned)layout->bits,
+                   })) {
+        return 0;
+    }
+    row = ((layout->width * layout->channels * layout->bits) + (PDF_BITS_PER_BYTE - 1)) /
+          PDF_BITS_PER_BYTE;
+    if (data->size != row * layout->height) {
+        return 0;
+    }
+    image->rgba = malloc(layout->width * layout->height * 4);
+    if (!image->rgba) {
+        return 0;
+    }
+    image->width = (unsigned)layout->width;
+    image->height = (unsigned)layout->height;
+    return readPdfDecodeRanges(pdf, pdfObject, *layout, ranges) &&
+           expandPdfSamples(image, data, *layout, lookup, ranges);
+}
+
+/**
+ * Validate PDF image metadata and resolve its declared dimensions and colour space.
+ * @param pdf Document containing the image.
+ * @param pdfObject Image object being checked.
+ * @param depth Current soft-mask recursion depth.
+ * @param color Receives the resolved colour-space value.
+ * @param width Receives the declared image width.
+ * @param height Receives the declared image height.
+ * @param maskId Receives the soft-mask object ID when present.
+ * @return Nonzero when the image metadata is supported.
+ * @author kai
+ */
+static int validatePdfImage(Pdf *pdf, PdfObject *pdfObject, unsigned depth, Slice *color,
+                            size_t *width, size_t *height, unsigned *maskId) {
+    Slice value;
+    if (dictValue(pdfObject->value, "/Matte", &value) == 1) {
+        return 0;
+    }
+    if (dictValue(pdfObject->value, "/SMask", &value) == 1 && !nameIs(value, "/None") &&
+        !getRef(pdf, pdfObject, "/SMask", maskId)) {
+        return 0;
+    }
+    if (depth > 2 || !pdfObject->stream || !getSize(pdf, pdfObject, "/Width", width) ||
+        !getSize(pdf, pdfObject, "/Height", height) || !*width || !*height ||
+        *width > RC_PIXELS / *height) {
+        return 0;
+    }
+    if (dictValue(pdfObject->value, "/ImageMask", &value) == 1 && !nameIs(value, "false")) {
+        return 0;
+    }
+    return dictValue(pdfObject->value, "/ColorSpace", color) == 1 && resolve(pdf, color);
+}
+
+/**
+ * Decode one PDF image payload as JPEG or raw samples.
+ * @param pdf Document used for predictor parameters.
+ * @param pdfObject Image dictionary.
+ * @param image Receives decoded RGBA pixels.
+ * @param data Filter-decoded payload.
+ * @param layout Image geometry and colour metadata; raw decoding updates bits.
+ * @param lookup Indexed RGB palette.
+ * @param jpeg Whether the payload is JPEG encoded.
+ * @return 1 for success, 0 for unsupported metadata, or -1 for corrupt JPEG data.
+ * @author kai
+ */
+static int decodePdfImageData(Pdf *pdf, PdfObject *pdfObject, RcImage *image, RcBuffer *data,
+                              PdfImageSampleLayout *layout,
+                              const unsigned char lookup[PDF_RGB_LOOKUP_CAPACITY], int jpeg) {
+    Slice decode;
+    if (jpeg) {
+        if (dictValue(pdfObject->value, "/Decode", &decode) == 1 || layout->indexed) {
+            return 0;
+        }
+        return decodePdfJpegImage(data, image, *layout);
+    }
+    return decodePdfRawImage(pdf, pdfObject, image, data, layout, lookup);
+}
+
 /**
  * Decode a supported PDF image XObject, including supported masks and filters.
  * @param pdf Document containing the image XObject and masks.
- * @param id Indirect object number of the image.
- * @param im Receives decoded RGBA pixels.
+ * @param objectId Indirect object number of the image.
+ * @param image Receives decoded RGBA pixels.
  * @param depth Mask-recursion depth, bounded to prevent cycles.
  * @return 1 with owned pixels, 0 for unsupported objects, -1 for corrupt payloads.
  * @author kai
  */
-static int pdfImage(Pdf *pdf, unsigned id, RcImage *im, unsigned depth) {
-    PdfObject *o = &pdf->objects[id];
-    Slice color, s, decode = {0}, mask = {0};
-    size_t w, h, bits = 8;
-    unsigned channels = 0, indexed = 0, high = 0, maskId, gen;
-    unsigned char lookup[768];
+static int pdfImage(Pdf *pdf, unsigned objectId, RcImage *image, unsigned depth) {
+    PdfObject *pdfObject = &pdf->objects[objectId];
+    Slice color;
+    size_t imageWidth;
+    size_t imageHeight;
+    size_t bits = PDF_BITS_PER_BYTE;
+    unsigned channels = 0;
+    unsigned indexed = 0;
+    unsigned high = 0;
+    unsigned maskId;
+    unsigned char lookup[PDF_RGB_LOOKUP_CAPACITY];
     RcBuffer data = {0};
-    int jpeg = 0, ok = 0;
-    double ranges[3][2] = {{0, 1}, {0, 1}, {0, 1}};
-    size_t x, y, row;
-    unsigned i;
+    int jpeg = 0;
+    int successStatus = 0;
 
     /* VALIDATE IMAGE CAPABILITIES*/
     /* Unsupported matte, mask, or colour metadata must preserve the original object.*/
-    memset(im, 0, sizeof(*im));
-    if (dictValue(o->value, "/Matte", &s) == 1)
+    *image = (RcImage){0};
+    if (!validatePdfImage(pdf, pdfObject, depth, &color, &imageWidth, &imageHeight, &maskId)) {
         return 0;
-    if (dictValue(o->value, "/SMask", &s) == 1 && !nameIs(s, "/None") &&
-        !getRef(pdf, o, "/SMask", &maskId))
-        return 0;
-    if (depth > 2 || !o->stream || !getSize(pdf, o, "/Width", &w) ||
-        !getSize(pdf, o, "/Height", &h) || !w || !h || w > RC_PIXELS / h)
-        return 0;
-    if (dictValue(o->value, "/ImageMask", &s) == 1 && !nameIs(s, "false"))
-        return 0;
-    if (dictValue(o->value, "/ColorSpace", &color) != 1 || !resolve(pdf, &color))
-        return 0;
+    }
 
-    /* RESOLVE THE COLOUR SPACE*/
-    if (nameIs(color, "/DeviceRGB"))
-        channels = 3;
-    else if (nameIs(color, "/DeviceGray"))
-        channels = 1;
-    else if (color.n > 2 && color.p[0] == '[') {
-        size_t at = space(color.p, color.n, 1), end;
-        Slice entry;
-        end = valueEnd(color.p, color.n, at, 0);
-        if (end > color.n)
-            return 0;
-        entry = (Slice){color.p + at, end - at};
-        if (!nameIs(entry, "/Indexed"))
-            return 0;
-        at = space(color.p, color.n, end);
-        end = valueEnd(color.p, color.n, at, 0);
-        if (end > color.n)
-            return 0;
-        entry = (Slice){color.p + at, end - at};
-        if (!nameIs(entry, "/DeviceRGB"))
-            return 0;
-
-        /* READ THE INDEXED PALETTE LIMIT*/
-        /* The maximum index bounds both pixel values and the required lookup byte count.*/
-        at = space(color.p, color.n, end);
-        {
-            size_t value;
-            if (!uintAt(color.p, color.n, &at, &value) || value > 255)
-                return 0;
-            high = (unsigned)value;
-        }
-        at = space(color.p, color.n, at);
-        end = valueEnd(color.p, color.n, at, 0);
-        if (end > color.n)
-            return 0;
-        entry = (Slice){color.p + at, end - at};
-
-        /* LOAD AN INDEXED COLOUR LOOKUP*/
-        /* A palette can be a referenced stream or an inline hexadecimal byte sequence.*/
-        {
-            RcBuffer lut = {0};
-            int decoded = 0, jpegLookup = 0;
-            if (reference(entry, &maskId, &gen))
-                decoded = maskId < pdf->count &&
-                          decodeFilters(pdf, &pdf->objects[maskId], &lut, &jpegLookup) == 1 &&
-                          !jpegLookup;
-            else if (entry.n >= 2 && entry.p[0] == '<' && entry.p[1] != '<') {
-                Slice bytes = {entry.p + 1, entry.n - 1};
-                decoded = asciiHex(bytes, &lut);
-            }
-            if (!decoded || lut.size != (high + 1) * 3) {
-                free(lut.data);
-                return 0;
-            }
-            memcpy(lookup, lut.data, lut.size);
-            free(lut.data);
-        }
-        channels = 1;
-        indexed = 1;
-    } else
-        return 0;
     {
-        /* DECODE THE IMAGE PAYLOAD*/
-        int status = decodeFilters(pdf, o, &data, &jpeg);
+        PdfImageColor imageColor = {0};
+        if (!readPdfImageColor(pdf, color, &imageColor)) {
+            return 0;
+        }
+        channels = imageColor.channels;
+        indexed = imageColor.indexed;
+        high = imageColor.high;
+        copyPdfBytes(lookup, imageColor.lookup, sizeof(lookup));
+    }
+    {
+        int status = decodeFilters(pdf, pdfObject, &data, &jpeg);
         if (status <= 0) {
-            ok = status;
+            successStatus = status;
             goto done;
         }
     }
 
     /* DECODE JPEG OR RECONSTRUCT RAW SAMPLES*/
-    if (jpeg) {
-        if (dictValue(o->value, "/Decode", &s) == 1)
-            goto done;
-        if (indexed)
-            goto done;
-        if (!rcJpeg(data.data, data.size, im, 0) || im->width != w || im->height != h) {
-            ok = -1;
+    {
+        PdfImageSampleLayout layout = {imageWidth, imageHeight, bits, channels, indexed, high};
+        successStatus = decodePdfImageData(pdf, pdfObject, image, &data, &layout, lookup, jpeg);
+        if (successStatus <= 0) {
             goto done;
         }
-    } else {
-        if (!getSize(pdf, o, "/BitsPerComponent", &bits) ||
-            (bits != 1 && bits != 2 && bits != 4 && bits != 8 && bits != 16) ||
-            !predictor(pdf, o, &data, (unsigned)w, (unsigned)h, channels, (unsigned)bits))
-            goto done;
-        row = (w * channels * bits + 7) / 8;
-        if (data.size != row * h)
-            goto done;
-        im->rgba = malloc(w * h * 4);
-        if (!im->rgba)
-            goto done;
-        im->width = (unsigned)w;
-        im->height = (unsigned)h;
-
-        /* READ RAW-SAMPLE DECODE RANGES*/
-        if (dictValue(o->value, "/Decode", &decode) == 1) {
-            size_t at = 1;
-            if (!resolve(pdf, &decode) || decode.p[0] != '[' || indexed)
-                goto done;
-            for (i = 0; i < channels; i++) {
-                unsigned endpoint;
-                for (endpoint = 0; endpoint < 2; endpoint++) {
-                    char *end;
-                    at = space(decode.p, decode.n, at);
-                    ranges[i][endpoint] = strtod((const char *)decode.p + at, &end);
-                    if ((const unsigned char *)end == decode.p + at ||
-                        (const unsigned char *)end > decode.p + decode.n ||
-                        !isfinite(ranges[i][endpoint]))
-                        goto done;
-                    at = (size_t)((const unsigned char *)end - decode.p);
-                }
-            }
+        if (!jpeg) {
+            bits = layout.bits;
         }
-
-        /* EXPAND RASTER SAMPLES*/
-        /* Indexed samples address the lookup; direct samples use their declared decode ranges.*/
-        for (y = 0; y < h; y++)
-            for (x = 0; x < w; x++) {
-                unsigned char *pixel = im->rgba + (y * w + x) * 4;
-                const unsigned char *r = data.data + y * row;
-                unsigned values[3] = {0};
-                for (i = 0; i < channels; i++)
-                    values[i] = rcSample(r, x * channels + i, (unsigned)bits);
-                pixel[3] = 255;
-                if (indexed) {
-                    if (values[0] > high)
-                        goto done;
-                    memcpy(pixel, lookup + values[0] * 3, 3);
-                } else {
-                    for (i = 0; i < channels; i++) {
-                        double value = (ranges[i][0] + values[i] * (ranges[i][1] - ranges[i][0]) /
-                                                           ((1U << bits) - 1)) *
-                                       255;
-                        if (value < 0)
-                            value = 0;
-                        if (value > 255)
-                            value = 255;
-                        pixel[i] = (unsigned char)floor(value + 0.5);
-                    }
-                    if (channels == 1)
-                        pixel[1] = pixel[2] = pixel[0];
-                }
-            }
     }
 
     /* APPLY COLOUR-KEY TRANSPARENCY*/
-    /* Compare the original packed samples before their colour-range mapping.*/
-    if (dictValue(o->value, "/Mask", &mask) == 1) {
-        if (!resolve(pdf, &mask) || !mask.n || mask.p[0] != '[')
-            goto done; /* Colour-key masking: compare original samples, before decode mapping. */
-        {
-            size_t at = 1, limits[6];
-            if (jpeg)
-                goto done;
-            for (i = 0; i < channels * 2; i++)
-                if (!uintAt(mask.p, mask.n, &at, &limits[i]))
-                    goto done;
-            row = (w * channels * bits + 7) / 8;
-            for (y = 0; y < h; y++)
-                for (x = 0; x < w; x++) {
-                    int transparent = 1;
-                    for (i = 0; i < channels; i++) {
-                        unsigned value =
-                            rcSample(data.data + y * row, x * channels + i, (unsigned)bits);
-                        if (value < limits[i * 2] || value > limits[i * 2 + 1])
-                            transparent = 0;
-                    }
-                    if (transparent)
-                        im->rgba[(y * w + x) * 4 + 3] = 0;
-                }
+    /* Compare original packed samples before their colour-range mapping.*/
+    {
+        PdfImageSampleLayout layout = {imageWidth, imageHeight, bits, channels, indexed, high};
+        if (!applyPdfColorKey(pdf, pdfObject, image, &data, layout, jpeg)) {
+            goto done;
         }
     }
 
     /* APPLY THE SOFT MASK*/
     /* Decode the mask recursively, then copy its grayscale coverage into straight alpha.*/
-    if (getRef(pdf, o, "/SMask", &maskId)) {
+    if (getRef(pdf, pdfObject, "/SMask", &maskId)) {
         RcImage alpha = {0};
-        if (!pdfImage(pdf, maskId, &alpha, depth + 1) || alpha.width != w || alpha.height != h) {
+        if (!pdfImage(pdf, maskId, &alpha, depth + 1) || alpha.width != imageWidth ||
+            alpha.height != imageHeight) {
             free(alpha.rgba);
             goto done;
         }
-        for (x = 0; x < w * h; x++)
-            im->rgba[x * 4 + 3] = alpha.rgba[x * 4];
+        size_t pixelIndex;
+        for (pixelIndex = 0; pixelIndex < imageWidth * imageHeight; pixelIndex++) {
+            image->rgba[(pixelIndex * 4) + 3] = alpha.rgba[pixelIndex * 4];
+        }
         free(alpha.rgba);
     }
-    ok = 1;
+    successStatus = 1;
 done:
     /* RELEASE IMAGE WORKSPACE*/
     free(data.data);
-    if (ok <= 0) {
-        free(im->rgba);
-        memset(im, 0, sizeof(*im));
+    if (successStatus <= 0) {
+        free(image->rgba);
+        *image = (RcImage){0};
     }
-    return ok;
+    return successStatus;
 }
 
 /*//////////////////////////////////////////////////
@@ -1053,6 +1992,102 @@ OUTPUT
 //////////////////////////////////////////////////*/
 
 /* OBJECT SERIALIZATION*/
+typedef struct {
+    size_t digits;
+} PdfMinimumDigits;
+
+/**
+ * Append an unsigned decimal number, padding to a minimum field width when requested.
+ * @param out Destination buffer.
+ * @param value Number to append.
+ * @param minimumDigits Minimum number of emitted digits.
+ * @return 1 when every digit is appended; otherwise 0 on allocation failure.
+ * @author kai
+ */
+static int appendUnsigned(RcBuffer *out, unsigned long value, PdfMinimumDigits minimumDigits) {
+    char digits[sizeof(value) * CHAR_BIT];
+    size_t digitCount = 0;
+    do {
+        digits[digitCount++] = (char)('0' + (value % PDF_DECIMAL_RADIX));
+        value /= PDF_DECIMAL_RADIX;
+    } while (value);
+    while (digitCount < minimumDigits.digits) {
+        digits[digitCount++] = '0';
+    }
+    while (digitCount) {
+        if (!rcAppend(out, &digits[--digitCount], sizeof(digits[0]))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/**
+ * Serialize one live PDF object and record its output offset.
+ * @param pdf Parsed document.
+ * @param out Candidate output buffer.
+ * @param offsets Output object offsets.
+ * @param itemIndex Object number to serialize.
+ * @return Nonzero when the complete object is written.
+ * @author kai
+ */
+static int writePdfObject(Pdf *pdf, RcBuffer *out, size_t offsets[], unsigned itemIndex) {
+    PdfObject *pdfObject = &pdf->objects[itemIndex];
+    if (!pdfObject->live) {
+        return 1;
+    }
+    offsets[itemIndex] = out->size;
+    if (!appendUnsigned(out, itemIndex, (PdfMinimumDigits){0}) ||
+        !rcAppend(out, " ", sizeof(" ") - 1) ||
+        !appendUnsigned(out, pdfObject->generation, (PdfMinimumDigits){0}) ||
+        !rcAppend(out, " obj\n", sizeof(" obj\n") - 1)) {
+        return 0;
+    }
+    if (pdfObject->replacement.size) {
+        if (!rcAppend(out, pdfObject->replacement.data, pdfObject->replacement.size)) {
+            return 0;
+        }
+    } else if (!rcAppend(out, pdfObject->value.sourceBytes,
+                         (size_t)(pdfObject->end - pdfObject->value.sourceBytes))) {
+        return 0;
+    }
+    return rcAppend(out, "\nendobj\n", PDF_END_OBJECT_TEXT_LENGTH);
+}
+
+/**
+ * Write the rebuilt PDF cross-reference table and trailer.
+ * @param pdf Parsed document.
+ * @param out Candidate output buffer.
+ * @param offsets Offsets recorded while writing objects.
+ * @param xref Receives the xref table offset.
+ * @return Nonzero when xref, trailer, and EOF marker are appended.
+ * @author kai
+ */
+static int writePdfCrossReference(Pdf *pdf, RcBuffer *out, const size_t offsets[], size_t *xref) {
+    unsigned itemIndex;
+    *xref = out->size;
+    if (!rcAppend(out, "xref\n0 ", sizeof("xref\n0 ") - 1) ||
+        !appendUnsigned(out, pdf->count, (PdfMinimumDigits){0}) ||
+        !rcAppend(out, "\n0000000000 65535 f \n", sizeof("\n0000000000 65535 f \n") - 1)) {
+        return 0;
+    }
+    for (itemIndex = 1; itemIndex < pdf->count; itemIndex++) {
+        if (!appendUnsigned(out, (unsigned long)offsets[itemIndex],
+                            (PdfMinimumDigits){PDF_XREF_OFFSET_WIDTH}) ||
+            !rcAppend(out, " ", sizeof(" ") - 1) ||
+            !appendUnsigned(out, pdf->objects[itemIndex].generation,
+                            (PdfMinimumDigits){PDF_XREF_GENERATION_WIDTH}) ||
+            !rcAppend(out, pdf->objects[itemIndex].live ? " n \n" : " f \n", sizeof(" n \n") - 1)) {
+            return 0;
+        }
+    }
+    return rcAppend(out, "trailer\n", PDF_TRAILER_TEXT_LENGTH) &&
+           rcAppend(out, pdf->trailer.sourceBytes, pdf->trailer.sourceLength) &&
+           rcAppend(out, "\nstartxref\n", sizeof("\nstartxref\n") - 1) &&
+           appendUnsigned(out, (unsigned long)*xref, (PdfMinimumDigits){0}) &&
+           rcAppend(out, "\n%%EOF\n", sizeof("\n%%EOF\n") - 1);
+}
+
 /**
  * Write indexed PDF objects, substituting only successfully processed image streams.
  * @param pdf Parsed document with any accepted stream replacements.
@@ -1061,58 +2096,190 @@ OUTPUT
  * @author kai
  */
 static int serialize(Pdf *pdf, RcBuffer *out) {
-    unsigned i;
-    char text[128];
-    int n;
+    unsigned itemIndex;
     size_t *offsets = calloc(pdf->count, sizeof(*offsets));
     size_t xref;
-    int ok = 0;
-    if (!offsets)
+    int successStatus = 0;
+    if (!offsets) {
         return 0;
-    if (!rcAppend(out, "%PDF-1.4\n%\342\343\317\323\n", 15))
-        goto done;
-
-    /* WRITE LIVE OBJECT BODIES*/
-    /* Replacement forms keep the original object number and generation.*/
-    for (i = 1; i < pdf->count; i++)
-        if (pdf->objects[i].live) {
-            PdfObject *o = &pdf->objects[i];
-            offsets[i] = out->size;
-            n = snprintf(text, sizeof(text), "%u %u obj\n", i, o->generation);
-            if (!rcAppend(out, text, (size_t)n))
-                goto done;
-            if (o->replacement.size) {
-                if (!rcAppend(out, o->replacement.data, o->replacement.size))
-                    goto done;
-            } else if (!rcAppend(out, o->value.p, (size_t)(o->end - o->value.p)))
-                goto done;
-            if (!rcAppend(out, "\nendobj\n", 8))
-                goto done;
-        }
-
-    /* REBUILD OFFSETS AND RETAIN THE TRAILER*/
-    xref = out->size;
-    n = snprintf(text, sizeof(text), "xref\n0 %u\n0000000000 65535 f \n", pdf->count);
-    if (!rcAppend(out, text, (size_t)n))
-        goto done;
-    for (i = 1; i < pdf->count; i++) {
-        n = snprintf(text, sizeof(text), "%010lu %05u %c \n", (unsigned long)offsets[i],
-                     pdf->objects[i].generation, pdf->objects[i].live ? 'n' : 'f');
-        if (!rcAppend(out, text, (size_t)n))
-            goto done;
     }
-    if (!rcAppend(out, "trailer\n", 8) || !rcAppend(out, pdf->trailer.p, pdf->trailer.n))
+    if (!rcAppend(out, "%PDF-1.4\n%\342\343\317\323\n", PDF_HEADER_BYTES_LENGTH)) {
         goto done;
-    n = snprintf(text, sizeof(text), "\nstartxref\n%lu\n%%%%EOF\n", (unsigned long)xref);
-    if (!rcAppend(out, text, (size_t)n))
+    }
+
+    for (itemIndex = 1; itemIndex < pdf->count; itemIndex++) {
+        if (!writePdfObject(pdf, out, offsets, itemIndex)) {
+            goto done;
+        }
+    }
+    if (!writePdfCrossReference(pdf, out, offsets, &xref)) {
         goto done;
-    ok = 1;
+    }
+    successStatus = 1;
 done:
     free(offsets);
-    return ok;
+    return successStatus;
 }
 
 /* PDF PIPELINE*/
+/**
+ * Mark soft and colour masks so they are not processed as standalone images.
+ * @param pdf Parsed PDF document.
+ * @author kai
+ */
+static void markPdfMasks(Pdf *pdf) {
+    unsigned itemIndex;
+    for (itemIndex = 1; itemIndex < pdf->count; itemIndex++) {
+        if (pdf->objects[itemIndex].live) {
+            unsigned mask;
+            if (getRef(pdf, &pdf->objects[itemIndex], "/SMask", &mask) ||
+                getRef(pdf, &pdf->objects[itemIndex], "/Mask", &mask)) {
+                pdf->objects[mask].mask = 1;
+            }
+        }
+    }
+}
+
+/**
+ * Compress vector drawing commands into a replacement PDF form stream.
+ * @param pdfObject Image object receiving the replacement form.
+ * @param vector Vectorized image.
+ * @return Nonzero when the complete form stream is assembled.
+ * @author kai
+ */
+static int writePdfForm(PdfObject *pdfObject, const RcVector *vector) {
+    RcBuffer compressed = {0};
+    int success = 0;
+    if (!rcDeflate(vector->pdf.data, vector->pdf.size, &compressed)) {
+        goto done;
+    }
+    if (!rcAppend(
+            &pdfObject->replacement,
+            "<< /Type /XObject /Subtype /Form /FormType 1 /BBox [0 0 1 1] /Resources << ",
+            sizeof("<< /Type /XObject /Subtype /Form /FormType 1 /BBox [0 0 1 1] /Resources << ") -
+                1) ||
+        !rcAppend(&pdfObject->replacement, vector->resources.data, vector->resources.size) ||
+        !rcAppend(&pdfObject->replacement, ">> /Filter /FlateDecode /Length ",
+                  sizeof(">> /Filter /FlateDecode /Length ") - 1) ||
+        !appendUnsigned(&pdfObject->replacement, (unsigned long)compressed.size,
+                        (PdfMinimumDigits){0}) ||
+        !rcAppend(&pdfObject->replacement, " >>\nstream\n", sizeof(" >>\nstream\n") - 1) ||
+        !rcAppend(&pdfObject->replacement, compressed.data, compressed.size) ||
+        !rcAppend(&pdfObject->replacement, "\nendstream\n", PDF_ENDSTREAM_TEXT_LENGTH)) {
+        goto done;
+    }
+    success = 1;
+done:
+    free(compressed.data);
+    return success;
+}
+
+/**
+ * Decode, vectorize, and register one PDF image object.
+ * @param pdf Parsed document.
+ * @param objectId Image object number.
+ * @param options Vectorization options.
+ * @param images Receives owned SVG sidecars.
+ * @param imageCount Number of registered SVG sidecars.
+ * @param unsupported Counter for skipped unsupported images.
+ * @return Nonzero on success or a supported skip.
+ * @author kai
+ */
+static int processPdfImageObject(Pdf *pdf, unsigned objectId, const MediaOptions *options,
+                                 RcBuffer **images, size_t *imageCount, unsigned *unsupported) {
+    PdfObject *pdfObject = &pdf->objects[objectId];
+    RcImage image = {0};
+    RcVector vector = {0};
+    RcBuffer *more;
+    int decoded = pdfImage(pdf, objectId, &image, 0);
+    int success = 0;
+    if (decoded < 0) {
+        goto done;
+    }
+    if (!decoded) {
+        (*unsupported)++;
+        success = 1;
+        goto done;
+    }
+    if (!rcVectorize(&image, (RcVectorOptions){options->colors, options->tolerance}, &vector)) {
+        goto done;
+    }
+    free(image.rgba);
+    image.rgba = NULL;
+    more = realloc(*images, (*imageCount + 1) * sizeof(**images));
+    if (!more) {
+        goto done;
+    }
+    *images = more;
+    (*images)[*imageCount] = vector.svg;
+    vector.svg = (RcBuffer){0};
+    (*imageCount)++;
+    success = writePdfForm(pdfObject, &vector);
+done:
+    free(image.rgba);
+    rcFreeVector(&vector);
+    return success;
+}
+
+/**
+ * Process all eligible PDF image objects.
+ * @param pdf Parsed document with image replacements.
+ * @param options Vectorization settings.
+ * @param images Receives owned SVG sidecars.
+ * @param imageCount Number of registered SVG sidecars.
+ * @param unsupported Counter for skipped unsupported images.
+ * @return Nonzero when all eligible images were processed.
+ * @author kai
+ */
+static int processPdfImages(Pdf *pdf, const MediaOptions *options, RcBuffer **images,
+                            size_t *imageCount, unsigned *unsupported) {
+    unsigned itemIndex;
+    markPdfMasks(pdf);
+    for (itemIndex = 1; itemIndex < pdf->count; itemIndex++) {
+        PdfObject *pdfObject = &pdf->objects[itemIndex];
+        Slice subtype;
+        if (!pdfObject->live || pdfObject->mask ||
+            dictValue(pdfObject->value, "/Subtype", &subtype) != 1 || !nameIs(subtype, "/Image")) {
+            continue;
+        }
+        if (!processPdfImageObject(pdf, itemIndex, options, images, imageCount, unsupported)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/**
+ * Release PDF object replacements and any sidecars after failed processing.
+ * @param pdf Parsed document.
+ * @author kai
+ */
+static void releasePdfObjects(Pdf *pdf) {
+    unsigned itemIndex;
+    if (pdf->objects) {
+        for (itemIndex = 0; itemIndex < pdf->count; itemIndex++) {
+            free(pdf->objects[itemIndex].replacement.data);
+        }
+        free(pdf->objects);
+    }
+}
+
+/**
+ * Release registered SVG sidecars after a failed PDF candidate.
+ * @param images Registered SVG sidecars.
+ * @param imageCount Number of registered sidecars.
+ * @author kai
+ */
+static void releasePdfImages(RcBuffer **images, size_t *imageCount) {
+    unsigned itemIndex;
+    for (itemIndex = 0; itemIndex < *imageCount; itemIndex++) {
+        free((*images)[itemIndex].data);
+    }
+    free(*images);
+    *images = NULL;
+    *imageCount = 0;
+}
+
 /**
  * Process eligible PDF image streams and preserve the original bytes on safe fallback.
  * @param data Complete source PDF bytes.
@@ -1128,127 +2295,39 @@ done:
 int processPdf(const unsigned char *data, size_t length, const MediaOptions *options,
                RcBuffer *candidate, RcBuffer **images, size_t *imageCount, unsigned *unsupported) {
     Pdf pdf = {0};
-    RcImage image = {0};
-    RcVector vector = {0};
-    RcBuffer compressed = {0};
-    unsigned i;
-    int ok = 0;
-    pdf.p = data;
-    pdf.n = length;
+    int successStatus = 0;
+    pdf.sourceBytes = data;
+    pdf.sourceLength = length;
     *images = NULL;
     *imageCount = 0;
     *unsupported = 0;
-
-    /* VALIDATE THE DOCUMENT AND MODE*/
-    if (!parsePdf(&pdf))
+    if (!parsePdf(&pdf)) {
         goto done;
+    }
     if (pdf.unsupported || !options->vectorMode) {
         *unsupported = (unsigned)pdf.unsupported;
-        ok = 1;
+        successStatus = 1;
         goto done;
     }
-
-    /* Soft masks belong to their owning images and must not become standalone forms.*/
-    for (i = 1; i < pdf.count; i++)
-        if (pdf.objects[i].live) {
-            unsigned mask;
-            if (getRef(&pdf, &pdf.objects[i], "/SMask", &mask) ||
-                getRef(&pdf, &pdf.objects[i], "/Mask", &mask))
-                pdf.objects[mask].mask = 1;
-        }
-
-    /* Reuse each image object ID so existing page resource references remain valid.*/
-    for (i = 1; i < pdf.count; i++) {
-        PdfObject *o = &pdf.objects[i];
-        Slice subtype;
-        char text[256];
-        int n;
-        if (!o->live || o->mask || dictValue(o->value, "/Subtype", &subtype) != 1 ||
-            !nameIs(subtype, "/Image"))
-            continue;
-        {
-            /* DECODE ONE IMAGE*/
-            /* Unsupported metadata preserves the object; corrupt supported payloads abort the*/
-            /* candidate.*/
-            int decoded = pdfImage(&pdf, i, &image, 0);
-            if (decoded < 0)
-                goto done;
-            if (!decoded) {
-                (*unsupported)++;
-                continue;
-            }
-        }
-        if (!rcVectorize(&image, options->colors, options->tolerance, &vector))
-            goto done;
-        free(image.rgba);
-        image.rgba = NULL;
-        {
-            /* TRANSFER SVG OWNERSHIP*/
-            /* Once registered, the common cleanup path owns this sidecar even if the PDF later*/
-            /* fails.*/
-            RcBuffer *more = realloc(*images, (*imageCount + 1) * sizeof(**images));
-            if (!more)
-                goto done;
-            *images = more;
-            (*images)[*imageCount] = vector.svg;
-            memset(&vector.svg, 0, sizeof(vector.svg));
-            (*imageCount)++;
-        }
-
-        /* ENCODE THE REPLACEMENT FORM*/
-        /* Compress drawing commands separately from the SVG representation.*/
-        if (!rcDeflate(vector.pdf.data, vector.pdf.size, &compressed))
-            goto done;
-        n = snprintf(text, sizeof(text),
-                     "<< /Type /XObject /Subtype /Form /FormType 1 /BBox [0 0 1 1] /Resources << ");
-        if (!rcAppend(&o->replacement, text, (size_t)n) ||
-            !rcAppend(&o->replacement, vector.resources.data, vector.resources.size))
-            goto done;
-        n = snprintf(text, sizeof(text), ">> /Filter /FlateDecode /Length %lu >>\nstream\n",
-                     (unsigned long)compressed.size);
-        if (!rcAppend(&o->replacement, text, (size_t)n) ||
-            !rcAppend(&o->replacement, compressed.data, compressed.size) ||
-            !rcAppend(&o->replacement, "\nendstream\n", 11))
-            goto done;
-        free(compressed.data);
-        memset(&compressed, 0, sizeof(compressed));
-        rcFreeVector(&vector);
+    if (!processPdfImages(&pdf, options, images, imageCount, unsupported)) {
+        goto done;
     }
-
-    /* SELECT AN UNCHANGED OR REBUILT CANDIDATE*/
     if (!*imageCount) {
-        ok = 1;
+        successStatus = 1;
         goto done;
     }
-
-    /* Validate regenerated object offsets before exposing the PDF candidate.*/
-    ok = serialize(&pdf, candidate);
-
-    /* REPARSE THE GENERATED CROSS-REFERENCE TABLE*/
-    if (ok) {
+    successStatus = serialize(&pdf, candidate);
+    if (successStatus) {
         Pdf check = {0};
-        check.p = candidate->data;
-        check.n = candidate->size;
-        ok = parsePdf(&check) && !check.unsupported;
+        check.sourceBytes = candidate->data;
+        check.sourceLength = candidate->size;
+        successStatus = parsePdf(&check) && !check.unsupported;
         free(check.objects);
     }
 done:
-    /* RELEASE THE CURRENT IMAGE AND DOCUMENT*/
-    /* Partial form construction uses the same cleanup path as a complete image.*/
-    free(image.rgba);
-    free(compressed.data);
-    rcFreeVector(&vector);
-    if (pdf.objects) {
-        for (i = 0; i < pdf.count; i++)
-            free(pdf.objects[i].replacement.data);
-        free(pdf.objects);
+    releasePdfObjects(&pdf);
+    if (!successStatus) {
+        releasePdfImages(images, imageCount);
     }
-    if (!ok) {
-        for (i = 0; i < *imageCount; i++)
-            free((*images)[i].data);
-        free(*images);
-        *images = NULL;
-        *imageCount = 0;
-    }
-    return ok;
+    return successStatus;
 }

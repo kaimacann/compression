@@ -17,28 +17,30 @@ The first command installs the locked Docs dependencies. `make run` builds `comp
 
 The Makefile builds one executable from `src/c/main`, `src/c/compression`, `src/c/encryption`, and `src/c/login`. `SOURCES` lists its C translation units; `HEADERS` lists headers whose changes must trigger a rebuild. `$(CC)` is the compiler, `$(CPPFLAGS)` supplies preprocessor options, `$(CFLAGS)` selects C11 and warning flags, and `$(LDLIBS)` links the math library. Override them on the command line when needed, for example `make CC=clang` or `make CFLAGS='-std=c11 -Wall -Wextra -pedantic -g -O0'`.
 
-| Command                 | Purpose                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------ |
-| `make`                  | Build `compression-demo`; this is the default target.                                      |
-| `make run`              | Build if needed, then run the interactive menu.                                            |
-| `make clean`            | Remove the executable and root-level Clang analyzer `.plist` files.                        |
-| `make check-doc-params` | List documented C functions that lack `@param` tags; exit unsuccessfully if any are found. |
-| `make format-c`         | Format the executable's listed C sources and headers in place; requires `clang-format`.    |
-| `make format-c-check`   | Check that same formatting without changing files.                                         |
+| Command                 | Purpose                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------- |
+| `make`                  | Build `compression-demo`; this is the default target.                                       |
+| `make run`              | Build if needed, then run the interactive menu.                                             |
+| `make clean`            | Remove the executable and Clang analyzer `.plist` files under `dist/cache/clang-analyzer/`. |
+| `make check-doc-params` | List documented C functions that lack `@param` tags; exit unsuccessfully if any are found.  |
+| `make format-c`         | Format the executable's listed C sources and headers in place; requires `clang-format`.     |
+| `make format-c-check`   | Check that same formatting without changing files.                                          |
 
-`make run` is the normal command for demonstrating the program. Use `make` when you only need a fresh executable, and `make clean && make` to force a complete rebuild. The Makefile does not install the executable globally; run it from the repository with `./compression-demo` after building.
+`make run` is the normal command for demonstrating the program. Use `make` when you only need a fresh executable, and `make clean && make` to force a complete rebuild. The Makefile does not install the executable globally; run it from the repository with `./dist/bin/compression-demo` after building.
 
 ## Docs and quality commands
 
-| Command                   | Purpose                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| `pnpm run docs`           | Start the local Docs development server on port 3010. Stop it with `Ctrl+C`.                      |
-| `pnpm run build`          | Build the static Docs site under `dist/docs`.                                                     |
-| `pnpm run quality`        | Run configured quality checks, including the C build and parameter-documentation check.           |
-| `pnpm run format`         | Format the README and editable Docs Markdown in place; the verbatim assessment brief is excluded. |
-| `pnpm run format:c`       | Run `make format-c`.                                                                              |
-| `pnpm run format:c:check` | Run `make format-c-check`.                                                                        |
-| `pnpm run docs:doxygen`   | Generate the C API reference under `dist/doxygen`; requires Doxygen.                              |
+| Command                   | Purpose                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `pnpm run docs`           | Start the local Docs development server on port 3010. Stop it with `Ctrl+C`. |
+| `pnpm run build`          | Build the static Docs site under `dist/docs`.                                |
+| `pnpm run quality`        | Safely fix and check changed files, including C documentation parameters.    |
+| `pnpm run quality:all`    | Safely fix and check the complete configured source scope.                   |
+| `pnpm run test`           | Run native C and launcher regression tests.                                  |
+| `pnpm run verify`         | Run full Quality, build, and tests.                                          |
+| `pnpm run format:c`       | Run `make format-c`.                                                         |
+| `pnpm run format:c:check` | Run `make format-c-check`.                                                   |
+| `pnpm run docs:doxygen`   | Generate the C API reference under `dist/doxygen`; requires Doxygen.         |
 
 ## Project material
 

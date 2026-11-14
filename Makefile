@@ -1,7 +1,7 @@
 CC ?= cc
 CPPFLAGS ?=
 CFLAGS ?= -std=c11 -Wall -Wextra -pedantic
-PROGRAM := compression-demo
+PROGRAM := dist/bin/compression-demo
 LDLIBS ?= -lm
 
 SOURCES := \
@@ -22,11 +22,13 @@ HEADERS := \
 	src/c/encryption/encryption.h \
 	src/c/login/login.h
 
-.PHONY: all run clean format-c format-c-check check-doc-params
+.PHONY: all run clean format-c format-c-check check-doc-params test-media-output \
+	test-archive-roundtrip test-codec-primitives test-vector-transform test-media-jpeg-io
 
 all: $(PROGRAM)
 
 $(PROGRAM): $(SOURCES) $(HEADERS)
+	mkdir -p dist/bin
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $(SOURCES) $(LDLIBS)
 
 run: $(PROGRAM)
@@ -41,5 +43,36 @@ format-c-check:
 check-doc-params:
 	node scripts/check-doc-params.mjs
 
+test-media-output:
+	@set -e; binary=$$(mktemp /tmp/compression-media-output.XXXXXX); trap 'rm -f "$$binary"' EXIT; \
+		$(CC) $(CPPFLAGS) $(CFLAGS) -o "$$binary" tests/c/media-output-directory.c \
+			$(filter-out src/c/main/main.c src/c/compression/media.c,$(SOURCES)) $(LDLIBS); \
+		"$$binary"
+
+test-archive-roundtrip:
+	@set -e; binary=$$(mktemp /tmp/compression-archive-roundtrip.XXXXXX); trap 'rm -f "$$binary"' EXIT; \
+		$(CC) $(CPPFLAGS) $(CFLAGS) -o "$$binary" tests/c/archive-roundtrip.c \
+			$(filter-out src/c/main/main.c,$(SOURCES)) $(LDLIBS); \
+		"$$binary"
+
+test-codec-primitives:
+	@set -e; binary=$$(mktemp /tmp/compression-codec-primitives.XXXXXX); trap 'rm -f "$$binary"' EXIT; \
+		$(CC) $(CPPFLAGS) $(CFLAGS) -o "$$binary" tests/c/codec-primitives.c \
+			$(filter-out src/c/main/main.c,$(SOURCES)) $(LDLIBS); \
+		"$$binary"
+
+test-vector-transform:
+	@set -e; binary=$$(mktemp /tmp/compression-vector-transform.XXXXXX); trap 'rm -f "$$binary"' EXIT; \
+		$(CC) $(CPPFLAGS) $(CFLAGS) -o "$$binary" tests/c/vector-transform.c \
+			$(filter-out src/c/main/main.c,$(SOURCES)) $(LDLIBS); \
+		"$$binary"
+
+test-media-jpeg-io:
+	@set -e; binary=$$(mktemp /tmp/compression-media-jpeg-io.XXXXXX); trap 'rm -f "$$binary"' EXIT; \
+		$(CC) $(CPPFLAGS) $(CFLAGS) -o "$$binary" tests/c/media-jpeg-io.c \
+			$(filter-out src/c/main/main.c,$(SOURCES)) $(LDLIBS); \
+		"$$binary"
+
 clean:
-	rm -f $(PROGRAM) *.plist
+	rm -f $(PROGRAM)
+	rm -rf dist/cache/clang-analyzer

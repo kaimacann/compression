@@ -7,63 +7,56 @@ description: Install the toolchain, build the compression program, and run a com
 
 The repository provides a C11 command-line tool for lossless byte archiving, restoration, inspection, search, and PNG/JPEG/PDF image processing. Byte archives use the project-specific `TCMP` v1 container. Media vectorization is intentionally aggressive and tuned for Terra's simple, low-detail, single-ink sketch use; it is lossy and is not general-purpose image compression. Keep the source image when detail or colour fidelity matters. Continue to [File handling](./guide/file-handling/) for format boundaries, or [Reference and troubleshooting](./guide/reference/) for commands and diagnostics.
 
-:::warning[Data and security boundary]
-The executable does not encrypt files. `TCMP` is a learning-project format, not a security, backup, or general interchange format. Vector mode discards image information for Terra-style sketches and is not a general-purpose image compressor. Keep source files and use copies for experiments.
-:::
+:::warning[Data and security boundary] The executable does not encrypt files. `TCMP` is a learning-project format, not a security, backup, or general interchange format. Vector mode discards image information for Terra-style sketches and is not a general-purpose image compressor. Keep source files and use copies for experiments. :::
 
 ## Install the toolchain
 
 The C program uses a C11 compiler and Make. The documentation site additionally uses Node.js and pnpm.
 
 <table>
-  <thead>
-    <tr>
-      <th>Platform</th>
-      <th>Install the C toolchain</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>macOS</td>
-      <td>
-        Install Apple's Command Line Tools with{" "}
-        <code>xcode-select --install</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>Debian or Ubuntu</td>
-      <td>
-        Run <code>sudo apt-get update</code> and{" "}
-        <code>sudo apt-get install build-essential</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>Fedora</td>
-      <td>
-        Run <code>sudo dnf install gcc make</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>Arch Linux</td>
-      <td>
-        Run <code>sudo pacman -S base-devel</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>Windows</td>
-      <td>
-        Install WSL 2, then use the Linux instructions inside the distribution.
-        Native Windows builds are not configured.
-      </td>
-    </tr>
-  </tbody>
+	<thead>
+		<tr>
+			<th>Platform</th>
+			<th>Install the C toolchain</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td>macOS</td>
+			<td>
+				Install Apple's Command Line Tools with <code>xcode-select --install</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>Debian or Ubuntu</td>
+			<td>
+				Run <code>sudo apt-get update</code> and <code>sudo apt-get install build-essential</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>Fedora</td>
+			<td>
+				Run <code>sudo dnf install gcc make</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>Arch Linux</td>
+			<td>
+				Run <code>sudo pacman -S base-devel</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>Windows</td>
+			<td>Install WSL 2, then use the Linux instructions inside the distribution. Native Windows builds are not configured.</td>
+		</tr>
+	</tbody>
 </table>
 
 For Windows, follow [Microsoft's WSL installation instructions](https://learn.microsoft.com/windows/wsl/install). For the Docs site, install [Node.js](https://nodejs.org/en/download/) and the repository's pinned pnpm version, `10.30.3`.
 
 Confirm the tools are available in the terminal:
 
-<Code language="bash">{`cc --version
+<Code language='bash'>{`cc --version
 make --version
 node --version
 pnpm --version`}</Code>
@@ -73,34 +66,34 @@ pnpm --version`}</Code>
 Run Make commands from the repository root. The default target compiles the C sources with C11 and warning flags; the executable is written to the repository root.
 
 <table>
-  <thead>
-    <tr>
-      <th>Command</th>
-      <th>Effect</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <code>make</code>
-      </td>
-      <td>
-        Build <code>compression-demo</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <code>make run</code>
-      </td>
-      <td>Build if needed and open the interactive menu.</td>
-    </tr>
-    <tr>
-      <td>
-        <code>make clean</code>
-      </td>
-      <td>Remove the executable and root-level analyzer output.</td>
-    </tr>
-  </tbody>
+	<thead>
+		<tr>
+			<th>Command</th>
+			<th>Effect</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td>
+				<code>make</code>
+			</td>
+			<td>
+				Build <code>compression-demo</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<code>make run</code>
+			</td>
+			<td>Build if needed and open the interactive menu.</td>
+		</tr>
+		<tr>
+			<td>
+				<code>make clean</code>
+			</td>
+			<td>Remove the executable and analyzer output under `dist/cache/clang-analyzer/`.</td>
+		</tr>
+	</tbody>
 </table>
 
 See the repository [README](../../README.md) for the Makefile walkthrough and all project commands.
@@ -109,9 +102,9 @@ See the repository [README](../../README.md) for the Makefile walkthrough and al
 
 The output paths must not already exist. A temporary directory keeps the example's outputs separate from the repository and avoids replacing files.
 
-<Code language="bash">{`work_dir=$(mktemp -d)
-./compression-demo compress samples/sample.txt "$work_dir/sample.tcmp"
-./compression-demo decompress "$work_dir/sample.tcmp" "$work_dir/sample-restored.txt"
+<Code language='bash'>{`work_dir=$(mktemp -d)
+./dist/bin/compression-demo compress samples/sample.txt "$work_dir/sample.tcmp"
+./dist/bin/compression-demo decompress "$work_dir/sample.tcmp" "$work_dir/sample-restored.txt"
 cmp samples/sample.txt "$work_dir/sample-restored.txt"
 rm -r "$work_dir"`}</Code>
 
@@ -121,29 +114,29 @@ The `cmp` command prints nothing and returns success when the restored bytes are
 
 Pass paths as separate arguments. Quote paths that contain spaces. The process returns status `0` on success and a non-zero status when an argument, input, container, or output operation fails.
 
-<Code language="text">{`compression-demo compress <input> <output.tcmp>
+<Code language='text'>{`compression-demo compress <input> <output.tcmp>
 compression-demo decompress <input.tcmp> <output>
 compression-demo inspect <input>
 compression-demo search <input> <literal-text>
 compression-demo --help`}</Code>
 
-The interactive menu opened by `make run` or `./compression-demo` supports archive compression, decompression, and exit. Use command-line modes for `inspect` and `search`: `inspect` reports byte frequencies in sorted order, while `search` uses Knuth–Morris–Pratt and prints up to the first 20 zero-based match offsets.
+The interactive menu opened by `make run` or `./dist/bin/compression-demo` supports archive compression, decompression, and exit. Use command-line modes for `inspect` and `search`: `inspect` reports byte frequencies in sorted order, while `search` uses Knuth–Morris–Pratt and prints up to the first 20 zero-based match offsets.
 
 ### Examples
 
 Use new destination paths for each run. The compression command leaves its source file unchanged.
 
-<Code language="bash">{`./compression-demo compress "samples/sample.txt" "sample.tcmp"
-./compression-demo decompress "sample.tcmp" "sample-restored.txt"
-./compression-demo inspect "samples/sample.txt"
-./compression-demo search "samples/sample.txt" "compression"`}</Code>
+<Code language='bash'>{`./dist/bin/compression-demo compress "samples/sample.txt" "sample.tcmp"
+./dist/bin/compression-demo decompress "sample.tcmp" "sample-restored.txt"
+./dist/bin/compression-demo inspect "samples/sample.txt"
+./dist/bin/compression-demo search "samples/sample.txt" "compression"`}</Code>
 
 ## Process PNG, JPEG, and PDF images
 
 `process` checks file signatures, so the extension does not determine the format. Lossless mode validates PNG/JPEG input and copies it unchanged. Vector mode decodes PNG or JPEG pixels, quantizes colours, traces SVG paths, and writes an SVG. For PDFs, it processes supported embedded image objects, exports SVG sidecars, and keeps the rebuilt PDF only when it is valid and smaller. Unsupported PDF objects remain in the copied or rebuilt document and are reported.
 
-<Code language="bash">{`./compression-demo process samples/bald.png bald.svg --mode vector --colors 32 --tolerance 0.5
-./compression-demo process samples/image-stream.pdf vectorized.pdf --mode vector --svg-dir vector-images`}</Code>
+<Code language='bash'>{`./dist/bin/compression-demo process samples/bald.png bald.svg --mode vector --colors 32 --tolerance 0.5
+./dist/bin/compression-demo process samples/image-stream.pdf vectorized.pdf --mode vector --svg-dir vector-images`}</Code>
 
 Use `--force` only when replacing existing output paths is intentional. Create the `--svg-dir` directory before running the command. The default palette is 16 colours and contour tolerance is 0.5 pixels; allowed values are 2–256 colours and 0–2 pixels. Vectorization changes image appearance, and an SVG may be larger than its raster source.
 
@@ -152,66 +145,65 @@ Use `--force` only when replacing existing output paths is intentional. Create t
 The Docs site is independent of the C executable. From the repository root, install the lockfile dependencies once and start the development server.
 
 <table>
-  <thead>
-    <tr>
-      <th>Command</th>
-      <th>Effect</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <code>pnpm install --frozen-lockfile</code>
-      </td>
-      <td>Install exactly the dependencies recorded by the lockfile.</td>
-    </tr>
-    <tr>
-      <td>
-        <code>pnpm run docs</code>
-      </td>
-      <td>
-        Start the local Docs development server; stop it with{" "}
-        <code>Ctrl+C</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <code>pnpm run build</code>
-      </td>
-      <td>
-        Build static pages under <code>dist/docs/</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <code>pnpm run quality</code>
-      </td>
-      <td>
-        Run the repository quality checks configured in
-        <code>config/quality.json</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>
-        <code>pnpm run format:c</code>
-      </td>
-      <td>Format the C sources with the configured clang-format style.</td>
-    </tr>
-    <tr>
-      <td>
-        <code>pnpm run format:c:check</code>
-      </td>
-      <td>Check C formatting without changing files.</td>
-    </tr>
-    <tr>
-      <td>
-        <code>pnpm run docs:doxygen</code>
-      </td>
-      <td>
-        Generate the Doxygen reference under <code>dist/doxygen/</code>.
-      </td>
-    </tr>
-  </tbody>
+	<thead>
+		<tr>
+			<th>Command</th>
+			<th>Effect</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td>
+				<code>pnpm install --frozen-lockfile</code>
+			</td>
+			<td>Install exactly the dependencies recorded by the lockfile.</td>
+		</tr>
+		<tr>
+			<td>
+				<code>pnpm run docs</code>
+			</td>
+			<td>
+				Start the local Docs development server; stop it with <code>Ctrl+C</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<code>pnpm run build</code>
+			</td>
+			<td>
+				Build static pages under <code>dist/docs/</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<code>pnpm run quality</code>
+			</td>
+			<td>
+				Run the repository quality checks configured in
+				<code>config/quality.json</code>.
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<code>pnpm run format:c</code>
+			</td>
+			<td>Format the C sources with the configured clang-format style.</td>
+		</tr>
+		<tr>
+			<td>
+				<code>pnpm run format:c:check</code>
+			</td>
+			<td>Check C formatting without changing files.</td>
+		</tr>
+		<tr>
+			<td>
+				<code>pnpm run docs:doxygen</code>
+			</td>
+			<td>
+				Generate the Doxygen reference under <code>dist/doxygen/</code>.
+			</td>
+		</tr>
+	</tbody>
 </table>
 
 Assignment requirements and the separately authored business and technical proposals are grouped under [Assessment](/assessment/).

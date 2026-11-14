@@ -6,6 +6,16 @@ API
 //////////////////////////////////////////////////*/
 
 /* PROCESSING OPERATIONS*/
+/** Paths used by compression operations.
+ * @author kai
+ */
+typedef struct {
+    /** Source file path. */
+    const char *input;
+    /** Destination file path. */
+    const char *output;
+} CompressionPaths;
+
 /** Preserve supported media or archive non-media bytes in TCMP.
  * @param inputPath Source file; its contents determine media routing.
  * @param outputPath New destination; existing files are preserved.
@@ -15,20 +25,18 @@ API
 int compressFile(const char *inputPath, const char *outputPath);
 
 /** Encode any byte stream as the private TCMP container.
- * @param inputPath Source file.
- * @param outputPath New archive destination.
+ * @param paths Source file and new archive destination.
  * @return 1 on success, otherwise 0.
  * @author kai
  */
-int archiveFile(const char *inputPath, const char *outputPath);
+int archiveFile(CompressionPaths paths);
 
 /** Restore bytes from a valid TCMP container.
- * @param inputPath Archive source.
- * @param outputPath New restored-file destination.
+ * @param paths Archive source and new restored-file destination.
  * @return 1 on success, otherwise 0.
  * @author kai
  */
-int decompressFile(const char *inputPath, const char *outputPath);
+int decompressFile(CompressionPaths paths);
 
 /** Print size and the ten most frequent byte values in a file.
  * @param inputPath Source file.

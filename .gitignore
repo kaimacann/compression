@@ -35,7 +35,6 @@
 *.i*86
 *.x86_64
 *.hex
-/compression-demo
 /.login
 *.plist
 
@@ -70,3 +69,9 @@ docs/doxygen/*
 
 # Error logs
 error.log
+
+# Generated test output
+**/tests/results/
+
+# Local generated caches and dependency links
+.astro

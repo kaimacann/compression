@@ -159,15 +159,17 @@ Response fields: `contractVersion`, `requestId`, `assetId`, `status`, source/out
 
 Example envelope:
 
-    {
-      "contractVersion": "v1",
-      "requestId": "request-id",
-      "keyId": "review-key-2026-01",
-      "algorithm": "AEAD-approved-by-tutor",
-      "nonce": "base64...",
-      "ciphertext": "base64...",
-      "tag": "base64..."
-    }
+```json
+{
+	"contractVersion": "v1",
+	"requestId": "request-id",
+	"keyId": "review-key-2026-01",
+	"algorithm": "AEAD-approved-by-tutor",
+	"nonce": "base64...",
+	"ciphertext": "base64...",
+	"tag": "base64..."
+}
+```
 
 Security boundary: use a vetted cryptography library if allowed, TLS in transit, and environment-injected secrets or an approved secret manager. Do not claim production security from custom encryption. Document the threat model and key lifecycle in the report.
 
@@ -175,10 +177,10 @@ Security boundary: use a vetted cryptography library if allowed, TLS in transit,
 
 ### 8.1 Classification rules
 
-| Rule                    | Details                                                                                                                                                                           |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule | Details |
+| --- | --- |
 | Explicit classification | Begin with rules, not an opaque classifier. Use controlled fixtures for flat colour/palette data, repeated/uniform backgrounds, simple strokes, and unsupported/ambiguous images. |
-| Uncertain results       | Record the reason in metadata; classify as unknown when no rule is decisive.                                                                                                      |
+| Uncertain results | Record the reason in metadata; classify as unknown when no rule is decisive. |
 
 ### 8.2 Representation decisions
 
