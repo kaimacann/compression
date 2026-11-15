@@ -89,7 +89,7 @@ try {
 		for (const manifest of [join(cwd, 'package.json'), join(root, 'package.json'), join(root, 'config/package.json')]) {
 			if (!existsSync(manifest)) continue;
 			try {
-				modulePath = createRequire(manifest).resolve('@terra-symposium/standards-quality/cli');
+				modulePath = createRequire(manifest).resolve('@terra-symposium/quality/cli');
 				break;
 			} catch (error) {
 				if (error.code !== 'MODULE_NOT_FOUND') throw error;
@@ -97,7 +97,7 @@ try {
 		}
 	}
 	if (process.env.STANDARDS_QUALITY_RUNNER) modulePath = process.env.STANDARDS_QUALITY_RUNNER;
-	if (!modulePath) throw new Error('Install @terra-symposium/standards-quality in this repository before running Quality.');
+	if (!modulePath) throw new Error('Install @terra-symposium/quality in this repository before running Quality.');
 	if (args[0] === 'quality' && !args.includes('--warn') && !args.includes('--fix') && !args.includes('--safe-fix')) args.push('--fix');
 	const { runQualityFromCfg } = await import(pathToFileURL(modulePath).href);
 	await runQualityFromCfg(configPath, args);
