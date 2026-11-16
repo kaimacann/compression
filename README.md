@@ -15,7 +15,7 @@ make run
 
 ## Usage
 
-The byte archive format is lossless `TCMP`; the restore operation decrypts and decompresses its archive. PNG, JPEG, and PDF media modes can emit simplified SVG or smaller PDF output. Vector mode is lossy and best suited to simple sketches, so keep the original when fidelity matters. See the [formats and Makefile guide](docs/BUILD_AND_FORMATS.md) for output paths and options.
+The byte archive format is lossless `TCMP`; the restore operation decrypts and decompresses its archive. PNG, JPEG, and PDF media modes can emit simplified SVG or smaller PDF output. Vector mode is lossy and best suited to simple sketches, so keep the original when fidelity matters. See the [formats and Makefile guide](docs/compression/build-and-formats.mdx) for output paths and options.
 
 ## Validation
 
@@ -30,7 +30,7 @@ Quality can apply safe fixes; review the diff before committing. No separate bro
 
 ## Contributing
 
-`quality:all` checks the complete configured scope, including C documentation parameters. `build` generates the Docs site. The [Makefile guide](docs/BUILD_AND_FORMATS.md) documents native build, format, and Doxygen targets.
+`quality:all` checks the complete configured scope, including C documentation parameters. `build` generates the Docs site. The [Makefile guide](docs/compression/build-and-formats.mdx) documents native build, format, and Doxygen targets.
 
 Open a pull request against `development` and review the results of [`repository-check.yml`](.github/workflows/repository-check.yml) before merging. Keep unrelated changes out of the pull request.
 
@@ -38,7 +38,7 @@ Open a pull request against `development` and review the results of [`repository
 
 - [Assessment material](docs/assessment/)
 - [Compression guide](docs/compression/)
-- [Build and formats reference](docs/BUILD_AND_FORMATS.md)
+- [Build and formats reference](docs/compression/build-and-formats.mdx)
 
 ## License
 
