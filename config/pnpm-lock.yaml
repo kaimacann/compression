@@ -17,9 +17,9 @@ importers:
       '@terra-symposium/docs':
         specifier: ^0.4.16
         version: 0.4.16(@astrojs/markdown-satteri@0.4.6)(@types/node@24.19.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(esbuild@0.28.2)(jiti@1.21.7)(xstate@5.33.3)
-      '@terra-symposium/quality':
-        specifier: ^2.4.3
-        version: 2.4.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@terra-symposium/hygiene':
+        specifier: ^2.4.5
+        version: 2.4.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       astro:
         specifier: ^7.4.4
         version: 7.4.4(@astrojs/markdown-remark@7.3.5)(@types/node@24.19.2)(esbuild@0.28.2)(jiti@1.21.7)(yaml@2.9.1)
@@ -1671,8 +1671,8 @@ packages:
     engines: {node: '>=24.12.0'}
     hasBin: true
 
-  '@terra-symposium/quality@2.4.3':
-    resolution: {integrity: sha512-/gdEMyrzUCHpMeEOrp9uow8ms65sj9U7HDWuJ9VcsAi3J+k0VA9ZMdvdAOtvXH8iLGSkfEgRSQ91Mdlqb7ub0g==}
+  '@terra-symposium/hygiene@2.4.5':
+    resolution: {integrity: sha512-G8pHsIMjuPiL3pnmx9Uzfbul5wdAAFMlJquOAulvzk49fM2cd5pPR74IeY0DSa+vDvZPEKv067loSYUdk8g2CA==}
     engines: {node: '>=18.18'}
     hasBin: true
     peerDependencies:
@@ -5402,7 +5402,7 @@ snapshots:
       - uploadthing
       - xstate
 
-  '@terra-symposium/quality@2.4.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@terra-symposium/hygiene@2.4.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@terra-symposium/boundaries': 0.2.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       typescript: 5.9.3

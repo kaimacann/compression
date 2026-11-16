@@ -40,7 +40,7 @@ This checklist inventories repository-owned functions, documents, and configurat
 - [ ] `callback@53` (line 53): Test expected input/output, empty and boundary cases, and a relevant failure path. No direct test file is linked yet.
 - [ ] `callback@55` (line 55): Test expected input/output, empty and boundary cases, and a relevant failure path. No direct test file is linked yet.
 
-### `scripts/terra-quality.mjs`
+### `scripts/hygiene.mjs`
 
 - [ ] File behavior: execute or compile this source, including expected output and failure handling. No direct test file is linked yet.
 
