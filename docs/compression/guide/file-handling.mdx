@@ -76,7 +76,11 @@ Decompression validates the container header, reconstructs the tree from the sto
 
 The raw frame has a 22-byte header. The Huffman frame adds a 2,048-byte frequency table, so small or incompressible files usually use the raw method. Both methods preserve the original bytes; the raw frame may increase total size by its header.
 
-:::warning[Checksum is not authentication] The decoder validates an FNV-1a 64 checksum of the original bytes. It can detect accidental changes, but it is not cryptographic authentication and cannot protect against deliberate tampering. Keep independent copies of important data and do not use this format as a backup or transfer standard. :::
+:::warning[Checksum is not authentication]
+
+The decoder validates an FNV-1a 64 checksum of the original bytes. It can detect accidental changes, but it is not cryptographic authentication and cannot protect against deliberate tampering. Keep independent copies of important data and do not use this format as a backup or transfer standard.
+
+:::
 
 ## File safety and resource use
 

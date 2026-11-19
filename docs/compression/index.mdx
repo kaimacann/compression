@@ -7,7 +7,11 @@ description: Install the toolchain, build the compression program, and run a com
 
 The repository provides a C11 command-line tool for lossless byte archiving, restoration, inspection, search, and PNG/JPEG/PDF image processing. Byte archives use the project-specific `TCMP` v1 container. Media vectorization is intentionally aggressive and tuned for Terra's simple, low-detail, single-ink sketch use; it is lossy and is not general-purpose image compression. Keep the source image when detail or colour fidelity matters. Continue to [File handling](./guide/file-handling/) for format boundaries, or [Reference and troubleshooting](./guide/reference/) for commands and diagnostics.
 
-:::warning[Data and security boundary] The executable does not encrypt files. `TCMP` is a learning-project format, not a security, backup, or general interchange format. Vector mode discards image information for Terra-style sketches and is not a general-purpose image compressor. Keep source files and use copies for experiments. :::
+:::warning[Data and security boundary]
+
+The executable does not encrypt files. `TCMP` is a learning-project format, not a security, backup, or general interchange format. Vector mode discards image information for Terra-style sketches and is not a general-purpose image compressor. Keep source files and use copies for experiments.
+
+:::
 
 ## Install the toolchain
 
