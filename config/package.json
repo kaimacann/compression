@@ -26,7 +26,7 @@
 	},
 	"devDependencies": {
 		"@changesets/cli": "^3.0.3",
-		"@terra-symposium/docs": "^0.4.23",
+		"@terra-symposium/docs": "^0.4.24",
 		"react": "19.3.1",
 		"react-dom": "19.3.1",
 		"@terra-symposium/hygiene": "^2.4.5",
