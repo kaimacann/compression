@@ -5,7 +5,10 @@
 	"packageManager": "pnpm@10.30.3",
 	"docs": {
 		"title": "Compression",
-		"errorReporting": { "endpoint": "https://terrasymposium.com/api/error-report", "site": "compression" },
+		"errorReporting": {
+			"endpoint": "https://terrasymposium.com/api/error-report",
+			"site": "compression"
+		},
 		"description": "Assessment brief, submission guidance, and project proposal.",
 		"out": "dist/docs"
 	},
@@ -13,9 +16,9 @@
 		"changeset": "node config/node_modules/@changesets/cli/bin.js",
 		"changeset:status": "node config/node_modules/@changesets/cli/bin.js status",
 		"version-packages": "node config/node_modules/@changesets/cli/bin.js version",
-		"docs": "mkdir -p dist/cache/astro-types && docs dev --port 3010",
+		"docs": "cd .. && mkdir -p dist/cache/astro-types && config/node_modules/.bin/docs dev --port 3010",
 		"docs:doxygen": "doxygen config/Doxyfile",
-		"build": "make && mkdir -p dist/cache/astro-types && docs build --out dist/docs",
+		"build": "cd .. && make && mkdir -p dist/cache/astro-types && config/node_modules/.bin/docs build --out dist/docs",
 		"quality": "node \"$(git rev-parse --show-toplevel)/scripts/quality-runner.mjs\" quality",
 		"quality:all": "node \"$(git rev-parse --show-toplevel)/scripts/quality-runner.mjs\" quality --all",
 		"format:c": "make format-c",
