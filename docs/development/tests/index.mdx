@@ -81,22 +81,21 @@ PDF processing covers two distinct outcomes:
 
 `make run` opens the menu. On first launch create a local account, then sign in; subsequent CLI commands also prompt for sign-in. In a fresh checkout, the CLI archive round trip is:
 
-```sh
-make
-./compression-demo compress samples/repeated.txt /tmp/repeated.tcmp
-./compression-demo decompress /tmp/repeated.tcmp /tmp/repeated.restored
-cmp samples/repeated.txt /tmp/repeated.restored
-```
+<CodeBlock
+	language='sh'
+	code={
+		'make\n./compression-demo compress samples/repeated.txt /tmp/repeated.tcmp\n./compression-demo decompress /tmp/repeated.tcmp /tmp/repeated.restored\ncmp samples/repeated.txt /tmp/repeated.restored'
+	}
+/>
 
 Process media with the CLI after signing in:
 
-```sh
-./compression-demo process samples/bald.png /tmp/bald.svg --mode vector
-./compression-demo process samples/duck.png /tmp/duck.svg --mode vector --colors 16 --tolerance 0.5
-./compression-demo process docs/development/tests/before/test.jpeg /tmp/test.svg --mode vector --colors 2
-mkdir -p /tmp/image-stream-svg
-./compression-demo process samples/image-stream.pdf /tmp/image-stream-out.pdf --mode vector --svg-dir /tmp/image-stream-svg --force
-```
+<CodeBlock
+	language='sh'
+	code={
+		'./compression-demo process samples/bald.png /tmp/bald.svg --mode vector\n./compression-demo process samples/duck.png /tmp/duck.svg --mode vector --colors 16 --tolerance 0.5\n./compression-demo process docs/development/tests/before/test.jpeg /tmp/test.svg --mode vector --colors 2\nmkdir -p /tmp/image-stream-svg\n./compression-demo process samples/image-stream.pdf /tmp/image-stream-out.pdf --mode vector --svg-dir /tmp/image-stream-svg --force'
+	}
+/>
 
 The `--svg-dir` parent must already exist. `--force` explicitly allows replacing outputs.
 

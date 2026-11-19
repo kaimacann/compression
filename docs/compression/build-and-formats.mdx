@@ -9,10 +9,7 @@ Assessment material and a practical guide to the C compression repository. Canva
 
 Requirements: Node.js, pnpm 10.30.3, a C11 compiler available as `cc`, and Make. Run these commands from the repository root:
 
-```sh
-pnpm install --frozen-lockfile
-make run
-```
+<CodeBlock language='sh' code={'pnpm install --frozen-lockfile\nmake run'} />
 
 The first command installs the locked Docs dependencies. `make run` builds `compression-demo`, then asks you to create or enter a local account before opening the menu. Command-line operations also require sign-in. Ordinary files are archived as lossless `TCMP` data and the resulting archive is encrypted; the restore option decrypts it for decompression and leaves the archive encrypted. PNG, JPEG, and PDF media processing offers unchanged or Terra sketch vector output; these media outputs do not use the `TCMP` encryption flow. Vector mode is intentionally aggressive: its two-colour default targets simple, low-detail, single-ink sketches, can discard important detail, and is not general-purpose image compression. Keep the original when fidelity matters. PDF mode rebuilds a smaller PDF when possible and exports SVG sidecars; image inputs produce SVG. Leave the output blank to use a sibling name: unchanged media keeps its extension, vectorized images use `.svg`, PDFs keep `.pdf`, and byte archives use `.tcmp`. `decompress` restores only `TCMP` archives; SVG vectorization is lossy and cannot be reversed. To stop the menu, choose its exit option; `Ctrl+C` also stops it.
 
