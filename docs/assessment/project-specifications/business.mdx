@@ -159,12 +159,17 @@ Response fields: `contractVersion`, `requestId`, `assetId`, `status`, source/out
 
 Example envelope:
 
-<CodeBlock
-	language='json'
-	code={
-		'{\n\t"contractVersion": "v1",\n\t"requestId": "request-id",\n\t"keyId": "review-key-2026-01",\n\t"algorithm": "AEAD-approved-by-tutor",\n\t"nonce": "base64...",\n\t"ciphertext": "base64...",\n\t"tag": "base64..."\n}'
-	}
-/>
+```json
+{
+	"contractVersion": "v1",
+	"requestId": "request-id",
+	"keyId": "review-key-2026-01",
+	"algorithm": "AEAD-approved-by-tutor",
+	"nonce": "base64...",
+	"ciphertext": "base64...",
+	"tag": "base64..."
+}
+```
 
 Security boundary: use a vetted cryptography library if allowed, TLS in transit, and environment-injected secrets or an approved secret manager. Do not claim production security from custom encryption. Document the threat model and key lifecycle in the report.
 

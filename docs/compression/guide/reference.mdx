@@ -125,12 +125,13 @@ The default build uses only the permitted standard C headers `stdio.h`, `stdlib.
 
 `src/c/compression/compression.h` provides the path-based operations. Each function returns `1` on success and `0` on failure.
 
-<CodeBlock
-	language='c'
-	code={
-		'int archiveFile(const char *inputPath, const char *outputPath);\nint decompressFile(const char *inputPath, const char *outputPath);\nint inspectFile(const char *inputPath);\nint searchFile(const char *inputPath, const char *pattern);\nint processMedia(const char *inputPath, const char *outputPath, const MediaOptions *options);'
-	}
-/>
+```c
+int archiveFile(const char *inputPath, const char *outputPath);
+int decompressFile(const char *inputPath, const char *outputPath);
+int inspectFile(const char *inputPath);
+int searchFile(const char *inputPath, const char *pattern);
+int processMedia(const char *inputPath, const char *outputPath, const MediaOptions *options);
+```
 
 The compression module owns file streams, `TCMP` framing, and the Huffman tree. Media staging and PDF/image processing live under `src/c/compression/`. The interactive and command-line interfaces are in `src/c/main/main.c`.
 
