@@ -1,3 +1,10 @@
+/**
+ * scripts/hygiene.mjs
+ */
+/*//////////////////////////////////////////////////
+IMPORTS
+//////////////////////////////////////////////////*/
+
 import { fileURLToPath } from 'node:url';
 import { runQualityFromCfg } from '@terra-symposium/hygiene/cli';
 

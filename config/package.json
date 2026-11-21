@@ -16,9 +16,9 @@
 		"changeset": "node config/node_modules/@changesets/cli/bin.js",
 		"changeset:status": "node config/node_modules/@changesets/cli/bin.js status",
 		"version-packages": "node config/node_modules/@changesets/cli/bin.js version",
-		"docs": "cd .. && mkdir -p dist/cache/astro-types && config/node_modules/.bin/docs dev --port 3010",
+		"docs": "mkdir -p dist/cache/astro-types && pnpm exec docs dev --port 3010",
 		"docs:doxygen": "doxygen config/Doxyfile",
-		"build": "cd .. && make && mkdir -p dist/cache/astro-types && config/node_modules/.bin/docs build --out dist/docs",
+		"build": "make && mkdir -p dist/cache/astro-types && pnpm exec docs build --out dist/docs",
 		"quality": "node \"$(git rev-parse --show-toplevel)/scripts/quality-runner.mjs\" quality",
 		"quality:all": "node \"$(git rev-parse --show-toplevel)/scripts/quality-runner.mjs\" quality --all",
 		"format:c": "make format-c",
@@ -29,13 +29,14 @@
 	},
 	"devDependencies": {
 		"@changesets/cli": "^3.0.3",
+		"@eslint/js": "^9.39.5",
 		"@terra-symposium/docs": "^0.4.31",
-		"@terra-symposium/hygiene": "^2.4.5",
-		"astro": "^7.4.4",
+		"@terra-symposium/hygiene": "^2.5.5",
+		"eslint": "^9.39.5",
+		"globals": "^16.5.0",
 		"husky": "^9.1.7",
-		"prettier": "^3.9.10",
-		"react": "19.3.1",
-		"react-dom": "19.3.1"
+		"knip": "^6.47.0",
+		"prettier": "^3.9.10"
 	},
 	"pnpm": {
 		"overrides": {

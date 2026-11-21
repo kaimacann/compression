@@ -46,20 +46,23 @@ static int filtersMatch(void) {
     const unsigned char priorPaeth[] = {10, 20, 30};
     unsigned char unchanged[] = {7, 8};
 
-    if (!rcUnfilter(none, NULL, (RcUnfilterOptions){sizeof(none), 1, 0}) || none[0] != 1 || none[1] != 2 || none[2] != 3)
+    if (!rcUnfilter(none, NULL, (RcUnfilterOptions){sizeof(none), 1, 0}) || none[0] != 1 ||
+        none[1] != 2 || none[2] != 3)
         return 0;
-    if (!rcUnfilter(sub, NULL, (RcUnfilterOptions){sizeof(sub), 1, 1}) || sub[0] != 10 || sub[1] != 20 || sub[2] != 30)
+    if (!rcUnfilter(sub, NULL, (RcUnfilterOptions){sizeof(sub), 1, 1}) || sub[0] != 10 ||
+        sub[1] != 20 || sub[2] != 30)
         return 0;
-    if (!rcUnfilter(up, priorUp, (RcUnfilterOptions){sizeof(up), 1, 2}) || up[0] != 6 || up[1] != 8 || up[2] != 10)
+    if (!rcUnfilter(up, priorUp, (RcUnfilterOptions){sizeof(up), 1, 2}) || up[0] != 6 ||
+        up[1] != 8 || up[2] != 10)
         return 0;
-    if (!rcUnfilter(average, priorAverage, (RcUnfilterOptions){sizeof(average), 1, 3}) || average[0] != 11 ||
-        average[1] != 17 || average[2] != 21)
+    if (!rcUnfilter(average, priorAverage, (RcUnfilterOptions){sizeof(average), 1, 3}) ||
+        average[0] != 11 || average[1] != 17 || average[2] != 21)
         return 0;
-    if (!rcUnfilter(paeth, priorPaeth, (RcUnfilterOptions){sizeof(paeth), 1, 4}) || paeth[0] != 13 || paeth[1] != 24 ||
-        paeth[2] != 35)
+    if (!rcUnfilter(paeth, priorPaeth, (RcUnfilterOptions){sizeof(paeth), 1, 4}) ||
+        paeth[0] != 13 || paeth[1] != 24 || paeth[2] != 35)
         return 0;
-    return !rcUnfilter(unchanged, NULL, (RcUnfilterOptions){sizeof(unchanged), 1, 5}) && unchanged[0] == 7 &&
-           unchanged[1] == 8;
+    return !rcUnfilter(unchanged, NULL, (RcUnfilterOptions){sizeof(unchanged), 1, 5}) &&
+           unchanged[0] == 7 && unchanged[1] == 8;
 }
 
 /**

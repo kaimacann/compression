@@ -1,0 +1,12 @@
+{
+	"$schema": "./node_modules/knip/schema.json",
+	"ignoreBinaries": [
+		// System tools invoked by the Makefile and package scripts, not npm dependencies.
+		"doxygen",
+		"make"
+	],
+	"ignoreDependencies": [
+		// Loaded dynamically by scripts/quality-runner.mjs from the configured package root.
+		"@terra-symposium/hygiene"
+	]
+}

@@ -1,12 +1,41 @@
 {
-	"root": "..",
-	"sourceRoots": ["src/c/main", "src/c/compression"],
-	"extensions": [],
+	"sourceRoots": ["."],
+	"documentation": {
+		"required": { "importSection": true, "fileHeader": true, "multilineTsdoc": true }
+	},
+	"extensions": [".c", ".h", ".cjs", ".css", ".html", ".js", ".json", ".md", ".mdx", ".mjs", ".toml", ".yaml", ".yml"],
 	"languageProfiles": ["c"],
 	"enabledChecks": {
-		"lint": false,
-		"knip": false,
-		"dead-code": false
+		"error-boundaries": true,
+		"document": true,
+		"format": true,
+		"import": true,
+		"name": true,
+		"forward": true,
+		"accessibility": true,
+		"display-name": true,
+		"performance-patterns": true,
+		"documented-commands": true,
+		"lint": true,
+		"knip": true,
+		"dead-code": true,
+		"type": true,
+		"recommend": true,
+		"command": true,
+		"diff": true,
+		"alias": true,
+		"security": true,
+		"repeated-classes": true,
+		"tailwind-canonical": true,
+		"regex-dedup": true,
+		"ui-patterns": true,
+		"ui-recommendations": true,
+		"github": true
+	},
+	"tools": {
+		"eslint": "config/node_modules/.bin/eslint",
+		"knip": "config/node_modules/.bin/knip",
+		"prettier": "config/node_modules/.bin/prettier"
 	},
 	"qualityCommands": [
 		{

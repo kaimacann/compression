@@ -12,10 +12,11 @@ static int vectorizationIsDeterministic(void) {
     };
     RcImage image = {2, 2, pixels};
     RcVector first = {0}, second = {0};
-    int success = rcVectorize(&image, (RcVectorOptions){2, 0}, &first) && rcVectorize(&image, (RcVectorOptions){2, 0}, &second) &&
-                  first.colors == 2 && second.colors == 2 && first.svg.size > 0 &&
-                  first.pdf.size > 0 && first.resources.size > 0 &&
-                  first.svg.size == second.svg.size && first.pdf.size == second.pdf.size &&
+    int success = rcVectorize(&image, (RcVectorOptions){2, 0}, &first) &&
+                  rcVectorize(&image, (RcVectorOptions){2, 0}, &second) && first.colors == 2 &&
+                  second.colors == 2 && first.svg.size > 0 && first.pdf.size > 0 &&
+                  first.resources.size > 0 && first.svg.size == second.svg.size &&
+                  first.pdf.size == second.pdf.size &&
                   first.resources.size == second.resources.size &&
                   !memcmp(first.svg.data, second.svg.data, first.svg.size) &&
                   !memcmp(first.pdf.data, second.pdf.data, first.pdf.size) &&

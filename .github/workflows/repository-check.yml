@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Check quality
-        run: pnpm run quality
+        run: pnpm run quality:all
       - name: Require committed quality fixes
         run: git diff --exit-code
       - name: Build

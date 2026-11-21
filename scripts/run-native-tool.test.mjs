@@ -7,21 +7,18 @@ IMPORTS
 //////////////////////////////////////////////////*/
 
 // API
-import assert from "node:assert/strict";
-import test, { after } from "node:test";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
+import assert from 'node:assert/strict';
+import test, { after } from 'node:test';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 
 /*//////////////////////////////////////////////////
 CONFIG
 //////////////////////////////////////////////////*/
 
-const runnerPath = fileURLToPath(
-  new URL("./run-native-tool.mjs", import.meta.url),
-);
 const fixtureDirs = [];
 
 /*//////////////////////////////////////////////////
@@ -36,18 +33,14 @@ HELPERS
  * @return The temporary directory path.
  */
 async function createToolDir(includeMake = true) {
-  const dir = await mkdtemp(join(tmpdir(), "compression-native-tool-"));
-  fixtureDirs.push(dir);
-  if (includeMake) {
-    const makePath = join(dir, "make");
-    await writeFile(
-      makePath,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@"\nexit "${NATIVE_TOOL_EXIT_CODE:-0}"\n',
-      { mode: 0o755 },
-    );
-    await chmod(makePath, 0o755);
-  }
-  return dir;
+	const dir = await mkdtemp(join(tmpdir(), 'compression-native-tool-'));
+	fixtureDirs.push(dir);
+	if (includeMake) {
+		const makePath = join(dir, 'make');
+		await writeFile(makePath, '#!/bin/sh\nprintf \'%s\\n\' "$@"\nexit "${NATIVE_TOOL_EXIT_CODE:-0}"\n', { mode: 0o755 });
+		await chmod(makePath, 0o755);
+	}
+	return dir;
 }
 
 /**
@@ -59,64 +52,31 @@ async function createToolDir(includeMake = true) {
  *
  * @return The completed wrapper process result.
  */
-function runWrapper(dir, args, exitCode = "0") {
-  return spawnSync(process.execPath, [runnerPath, ...args], {
-    encoding: "utf8",
-    env: { ...process.env, PATH: dir, NATIVE_TOOL_EXIT_CODE: exitCode },
-  });
+function runWrapper(dir, args, exitCode = '0') {
+	return spawnSync(process.execPath, [fileURLToPath(new URL('./run-native-tool.mjs', import.meta.url)), ...args], {
+		encoding: 'utf8',
+		env: { ...process.env, PATH: dir, NATIVE_TOOL_EXIT_CODE: exitCode },
+	});
 }
 
-/**
- * Remove temporary PATH fixtures created by the wrapper tests.
- *
- */
-async function removeFixtures() {
-  for (const dir of fixtureDirs) {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
+after(async () => {
+	for (const dir of fixtureDirs) {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
 
-/**
- * Verify arguments with spaces arrive at the native command unchanged.
- *
- * @return Completes after the argument output is verified.
- */
-async function forwardsArguments() {
-  const dir = await createToolDir();
-  const result = runWrapper(dir, ["make", "first value", "--mode", "safe"]);
-  assert.equal(result.status, 0);
-  assert.equal(result.stdout, "first value\n--mode\nsafe\n");
-}
+test('forwards native-tool arguments without changing their boundaries', async () => {
+	const result = runWrapper(await createToolDir(), ['make', 'first value', '--mode', 'safe']);
+	assert.equal(result.status, 0);
+	assert.equal(result.stdout, 'first value\n--mode\nsafe\n');
+});
 
-/**
- * Verify the wrapper preserves the exit code returned by the native command.
- *
- * @return Completes after the exit status is verified.
- */
-async function propagatesExitStatus() {
-  const dir = await createToolDir();
-  const result = runWrapper(dir, ["make", "--quality-check"], "23");
-  assert.equal(result.status, 23);
-}
+test("returns the native tool's nonzero exit status", async () => {
+	assert.equal(runWrapper(await createToolDir(), ['make', '--quality-check'], '23').status, 23);
+});
 
-/**
- * Verify an unavailable system command produces actionable setup output.
- *
- * @return Completes after the missing-tool diagnostic is verified.
- */
-async function reportsMissingTool() {
-  const dir = await createToolDir(false);
-  const result = runWrapper(dir, ["make", "--version"]);
-  assert.equal(result.status, 1);
-  assert.equal(
-    result.stderr,
-    "The system tool 'make' is required; see the README for setup.\n",
-  );
-}
-after(removeFixtures);
-test(
-  "forwards native-tool arguments without changing their boundaries",
-  forwardsArguments,
-);
-test("returns the native tool's nonzero exit status", propagatesExitStatus);
-test("reports a missing native tool with setup guidance", reportsMissingTool);
+test('reports a missing native tool with setup guidance', async () => {
+	const result = runWrapper(await createToolDir(false), ['make', '--version']);
+	assert.equal(result.status, 1);
+	assert.equal(result.stderr, "The system tool 'make' is required; see the README for setup.\n");
+});
