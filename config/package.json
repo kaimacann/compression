@@ -25,7 +25,9 @@
 		"format:c:check": "make format-c-check",
 		"prepare": "husky",
 		"verify": "pnpm run quality:all && pnpm run build && pnpm run test",
-		"test": "node --test scripts/run-native-tool.test.mjs && make test-media-output && make test-archive-roundtrip && make test-codec-primitives && make test-vector-transform && make test-media-jpeg-io"
+		"test": "node --test scripts/run-native-tool.test.mjs && make test-media-output && make test-archive-roundtrip && make test-codec-primitives && make test-vector-transform && make test-media-jpeg-io",
+		"skills:prepare": "terra-skills prepare",
+		"skills:check": "terra-skills check"
 	},
 	"devDependencies": {
 		"@changesets/cli": "^3.0.3",
@@ -36,7 +38,8 @@
 		"globals": "^16.5.0",
 		"husky": "^9.1.7",
 		"knip": "^6.47.0",
-		"prettier": "^3.9.10"
+		"prettier": "^3.9.10",
+		"@terra-symposium/skills": "0.1.2"
 	},
 	"pnpm": {
 		"overrides": {
