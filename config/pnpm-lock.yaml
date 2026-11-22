@@ -20,8 +20,8 @@ importers:
         specifier: ^0.4.31
         version: 0.4.31(@astrojs/markdown-satteri@0.4.6)(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(esbuild@0.28.2)(jiti@1.21.7)(xstate@5.33.3)
       '@terra-symposium/hygiene':
-        specifier: ^2.5.6
-        version: 2.5.6(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: ^2.5.8
+        version: 2.5.8(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@terra-symposium/skills':
         specifier: 0.1.2
         version: 0.1.2
@@ -1966,8 +1966,8 @@ packages:
     engines: { node: '>=24.12.0' }
     hasBin: true
 
-  '@terra-symposium/hygiene@2.5.6':
-    resolution: { integrity: sha512-3i4PzROwd9BXes5ZqgwZ4ujqOhkVAFE9cTBnkxbvVKbzfhU1jXOY2KnBjyOOpSlqNTzO8PuuxmaLxDoi8OX6UA== }
+  '@terra-symposium/hygiene@2.5.8':
+    resolution: { integrity: sha512-fBt0hAqvh3nyWSuB6QSI43mQ1Ak5gVKu0vKOmWRxVJ3tXm+N8I7Gls0IwTrWmngUKXZy4kB24zosa1jHWoEyTA== }
     engines: { node: '>=18.18' }
     hasBin: true
     peerDependencies:
@@ -6788,7 +6788,7 @@ snapshots:
       - uploadthing
       - xstate
 
-  '@terra-symposium/hygiene@2.5.6(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@terra-symposium/hygiene@2.5.8(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@terra-symposium/boundaries': 0.2.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       typescript: 5.9.3

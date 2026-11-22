@@ -20,8 +20,11 @@ importers:
         specifier: ^0.4.31
         version: 0.4.31(@astrojs/markdown-satteri@0.4.10)(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(jiti@1.21.7)(vite@8.3.8(@types/node@26.6.6)(jiti@1.21.7)(yaml@2.9.1))(xstate@5.33.4)
       '@terra-symposium/hygiene':
-        specifier: ^2.5.5
-        version: 2.5.5(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: ^2.5.8
+        version: 2.5.8(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@terra-symposium/skills':
+        specifier: 0.1.2
+        version: 0.1.2
       eslint:
         specifier: ^9.39.5
         version: 9.39.5(jiti@1.21.7)
@@ -1854,8 +1857,8 @@ packages:
     engines: { node: '>=24.12.0' }
     hasBin: true
 
-  '@terra-symposium/hygiene@2.5.5':
-    resolution: { integrity: sha512-5+JHonrwcp4hoitwDjp9ax00OTCl2tKvPs+5AmPIf8DTlt8uvOlRGywKvb8Eehpe7Jv2ig5lItxJLVN2I5MMlw== }
+  '@terra-symposium/hygiene@2.5.8':
+    resolution: { integrity: sha512-fBt0hAqvh3nyWSuB6QSI43mQ1Ak5gVKu0vKOmWRxVJ3tXm+N8I7Gls0IwTrWmngUKXZy4kB24zosa1jHWoEyTA== }
     engines: { node: '>=18.18' }
     hasBin: true
     peerDependencies:
@@ -1863,6 +1866,11 @@ packages:
     peerDependenciesMeta:
       eslint:
         optional: true
+
+  '@terra-symposium/skills@0.1.2':
+    resolution: { integrity: sha512-xw1HAEU61QWuHEdJOUggSMdYZ+l6uc2Y52/nob4APxKEEts3jxW2oX205WbSwIj5yvse3GYtWJ/5zL4KGwjESg== }
+    engines: { node: '>=24.12.0' }
+    hasBin: true
 
   '@terra-symposium/styling@0.1.39':
     resolution: { integrity: sha512-GtV0INRB3AhIZJt9U6ZDgVEic0UPSCAfyHr5b8Vj4izGK0OFAxVUQCaKQk3+3gXH/xpnC+dcgbCpUw1xhBHFxQ== }
@@ -6650,7 +6658,7 @@ snapshots:
       - vite
       - xstate
 
-  '@terra-symposium/hygiene@2.5.5(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@terra-symposium/hygiene@2.5.8(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@terra-symposium/boundaries': 0.2.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       typescript: 5.9.3
@@ -6659,6 +6667,10 @@ snapshots:
     transitivePeerDependencies:
       - react
       - react-dom
+
+  '@terra-symposium/skills@0.1.2':
+    dependencies:
+      yaml: 2.9.1
 
   '@terra-symposium/styling@0.1.39(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(yaml@2.9.1)':
     dependencies:

@@ -124,11 +124,11 @@ for (const path of srcs.sort()) {
 						const file = relative(root, path);
 						const author = file.startsWith('src/c/compression/') ? 'kai' : /src\/c\/(encryption|login)\//.test(file) ? 'marceline' : 'haadi';
 						/**
- * Record a contract failure at the current C declaration.
- *
- * @param {string} msg Diagnostic to print with the source location.
- *
- * @returns {void} The warning count is updated in place.
+						 * Record a contract failure at the current C declaration.
+						 *
+						 * @param {string} msg Diagnostic to print with the source location.
+						 *
+						 * @returns {void} The warning count is updated in place.
 						 */
 						const report = msg => {
 							console.warn(`${file}:${src.slice(0, i).split('\n').length}: ${id}: ${msg}`);
