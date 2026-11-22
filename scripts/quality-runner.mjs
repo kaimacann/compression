@@ -60,7 +60,9 @@ while (scan.length) {
 raw.skippedFiles = [...new Set([...(raw.skippedFiles ?? []), ...genLinks])];
 /**
  * Keep build and test commands out of the source-only Quality phase.
+ *
  * @param {object} entry Configured command to classify.
+ *
  * @returns {boolean} Whether the command belongs to the build or test phase.
  */
 const isBuildOrTest = entry => {

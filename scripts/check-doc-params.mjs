@@ -15,8 +15,11 @@ const srcs = [];
 
 /**
  * Collect C translation units whose function contracts belong to this repository.
+ *
  * @param {string} dir Directory to inspect recursively.
+ *
  * @returns {Promise<void>} Resolves after every nested C source and header path is recorded.
+ *
  * @author haadi
  */
 async function collect(dir) {
@@ -29,8 +32,11 @@ async function collect(dir) {
 
 /**
  * Replace comments and literals with spaces while retaining source offsets and lines.
+ *
  * @param {string} src C source text to scan.
+ *
  * @returns {string} Same-length text with non-code characters blanked out.
+ *
  * @author haadi
  */
 function mask(src) {
@@ -39,11 +45,14 @@ function mask(src) {
 
 /**
  * Find the matching closing delimiter while respecting nested delimiters.
+ *
  * @param {string} text Source text containing the opening delimiter.
  * @param {number} start Offset of the opening delimiter.
  * @param {string} open Opening delimiter to balance.
  * @param {string} close Closing delimiter to balance.
+ *
  * @returns {number} Closing delimiter offset, or -1 when the pair is incomplete.
+ *
  * @author haadi
  */
 function matching(text, start, open = '(', close = ')') {
@@ -57,8 +66,11 @@ function matching(text, start, open = '(', close = ')') {
 
 /**
  * Extract parameter identifiers from a C parameter list, including function pointers.
+ *
  * @param {string} text Text between a function declarator's parentheses.
+ *
  * @returns {string[]} Parameter names in signature order; a void list is empty.
+ *
  * @author haadi
  */
 function params(text) {
@@ -112,9 +124,11 @@ for (const path of srcs.sort()) {
 						const file = relative(root, path);
 						const author = file.startsWith('src/c/compression/') ? 'kai' : /src\/c\/(encryption|login)\//.test(file) ? 'marceline' : 'haadi';
 						/**
-						 * Record a contract failure at the current C declaration.
-						 * @param {string} msg Diagnostic to print with the source location.
-						 * @returns {void} The warning count is updated in place.
+ * Record a contract failure at the current C declaration.
+ *
+ * @param {string} msg Diagnostic to print with the source location.
+ *
+ * @returns {void} The warning count is updated in place.
 						 */
 						const report = msg => {
 							console.warn(`${file}:${src.slice(0, i).split('\n').length}: ${id}: ${msg}`);
