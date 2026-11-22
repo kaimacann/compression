@@ -1,0 +1,3 @@
+# Keep authored CSS outside Prettier.
+**/*.css
+../**/*.css
