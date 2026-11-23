@@ -15,64 +15,15 @@ Decompression validates the container header, reconstructs the tree from the sto
 
 `TCMP` is the repository's own versioned container. It is not a published or interoperable archive standard.
 
-<table>
-	<thead>
-		<tr>
-			<th>Field</th>
-			<th>Raw frame</th>
-			<th>Huffman frame</th>
-		</tr>
-	</thead>
-	<tbody>
-		<tr>
-			<td>Signature</td>
-			<td>
-				Four bytes: <code>TCMP</code>
-			</td>
-			<td>
-				Four bytes: <code>TCMP</code>
-			</td>
-		</tr>
-		<tr>
-			<td>Version</td>
-			<td>
-				One byte: <code>1</code>
-			</td>
-			<td>
-				One byte: <code>1</code>
-			</td>
-		</tr>
-		<tr>
-			<td>Method</td>
-			<td>
-				One byte: <code>0</code>
-			</td>
-			<td>
-				One byte: <code>1</code>
-			</td>
-		</tr>
-		<tr>
-			<td>Original size</td>
-			<td>Eight-byte unsigned big-endian value</td>
-			<td>Eight-byte unsigned big-endian value</td>
-		</tr>
-		<tr>
-			<td>Checksum</td>
-			<td>Eight-byte big-endian FNV-1a 64 checksum of the original bytes</td>
-			<td>Eight-byte big-endian FNV-1a 64 checksum of the original bytes</td>
-		</tr>
-		<tr>
-			<td>Symbol counts</td>
-			<td>None</td>
-			<td>256 eight-byte unsigned big-endian frequencies</td>
-		</tr>
-		<tr>
-			<td>Payload</td>
-			<td>Original bytes</td>
-			<td>Prefix-coded bits, most-significant bit first; the last byte is zero-padded</td>
-		</tr>
-	</tbody>
-</table>
+| Field         | Raw frame                                                      | Huffman frame                                                               |
+| ------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Signature     | Four bytes: `TCMP`                                             | Four bytes: `TCMP`                                                          |
+| Version       | One byte: `1`                                                  | One byte: `1`                                                               |
+| Method        | One byte: `0`                                                  | One byte: `1`                                                               |
+| Original size | Eight-byte unsigned big-endian value                           | Eight-byte unsigned big-endian value                                        |
+| Checksum      | Eight-byte big-endian FNV-1a 64 checksum of the original bytes | Eight-byte big-endian FNV-1a 64 checksum of the original bytes              |
+| Symbol counts | None                                                           | 256 eight-byte unsigned big-endian frequencies                              |
+| Payload       | Original bytes                                                 | Prefix-coded bits, most-significant bit first; the last byte is zero-padded |
 
 The raw frame has a 22-byte header. The Huffman frame adds a 2,048-byte frequency table, so small or incompressible files usually use the raw method. Both methods preserve the original bytes; the raw frame may increase total size by its header.
 

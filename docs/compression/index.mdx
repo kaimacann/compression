@@ -1,6 +1,6 @@
 ---
 title: Get started
-description: Install the toolchain, build the compression program, and run a complete file round trip.
+description: Install the toolchain, build the program, and test a complete file round trip.
 ---
 
 ## Get started
@@ -17,44 +17,13 @@ The executable does not encrypt files. `TCMP` is a learning-project format, not 
 
 The C program uses a C11 compiler and Make. The documentation site additionally uses Node.js and pnpm.
 
-<table>
-	<thead>
-		<tr>
-			<th>Platform</th>
-			<th>Install the C toolchain</th>
-		</tr>
-	</thead>
-	<tbody>
-		<tr>
-			<td>macOS</td>
-			<td>
-				Install Apple's Command Line Tools with <code>xcode-select --install</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>Debian or Ubuntu</td>
-			<td>
-				Run <code>sudo apt-get update</code> and <code>sudo apt-get install build-essential</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>Fedora</td>
-			<td>
-				Run <code>sudo dnf install gcc make</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>Arch Linux</td>
-			<td>
-				Run <code>sudo pacman -S base-devel</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>Windows</td>
-			<td>Install WSL 2, then use the Linux instructions inside the distribution. Native Windows builds are not configured.</td>
-		</tr>
-	</tbody>
-</table>
+| Platform         | Install the C toolchain                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| macOS            | Install Apple's Command Line Tools with `xcode-select --install`.                                                 |
+| Debian or Ubuntu | Run `sudo apt-get update` and `sudo apt-get install build-essential`.                                             |
+| Fedora           | Run `sudo dnf install gcc make`.                                                                                  |
+| Arch Linux       | Run `sudo pacman -S base-devel`.                                                                                  |
+| Windows          | Install WSL 2, then use the Linux instructions inside the distribution. Native Windows builds are not configured. |
 
 For Windows, follow [Microsoft's WSL installation instructions](https://learn.microsoft.com/windows/wsl/install). For the Docs site, install [Node.js](https://nodejs.org/en/download/) and the repository's pinned pnpm version, `10.30.3`.
 
@@ -71,36 +40,11 @@ pnpm --version
 
 Run Make commands from the repository root. The default target compiles the C sources with C11 and warning flags; the executable is written to the repository root.
 
-<table>
-	<thead>
-		<tr>
-			<th>Command</th>
-			<th>Effect</th>
-		</tr>
-	</thead>
-	<tbody>
-		<tr>
-			<td>
-				<code>make</code>
-			</td>
-			<td>
-				Build <code>compression-demo</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>
-				<code>make run</code>
-			</td>
-			<td>Build if needed and open the interactive menu.</td>
-		</tr>
-		<tr>
-			<td>
-				<code>make clean</code>
-			</td>
-			<td>Remove the executable and analyzer output under `dist/cache/clang-analyzer/`.</td>
-		</tr>
-	</tbody>
-</table>
+| Command      | Effect                                                                          |
+| ------------ | ------------------------------------------------------------------------------- |
+| `make`       | Build `compression-demo`.                                                       |
+| `make run`   | Build if needed and open the interactive menu.                                  |
+| `make clean` | Remove the executable and analyzer output under \`dist/cache/clang-analyzer/\`. |
 
 See the repository [README](../../README.md) for the Makefile walkthrough and all project commands.
 
@@ -158,66 +102,14 @@ Use `--force` only when replacing existing output paths is intentional. Create t
 
 The Docs site is independent of the C executable. From the repository root, install the lockfile dependencies once and start the development server.
 
-<table>
-	<thead>
-		<tr>
-			<th>Command</th>
-			<th>Effect</th>
-		</tr>
-	</thead>
-	<tbody>
-		<tr>
-			<td>
-				<code>pnpm install --frozen-lockfile</code>
-			</td>
-			<td>Install exactly the dependencies recorded by the lockfile.</td>
-		</tr>
-		<tr>
-			<td>
-				<code>pnpm run docs</code>
-			</td>
-			<td>
-				Start the local Docs development server; stop it with <code>Ctrl+C</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>
-				<code>pnpm run build</code>
-			</td>
-			<td>
-				Build static pages under <code>dist/docs/</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>
-				<code>pnpm run quality</code>
-			</td>
-			<td>
-				Run the repository quality checks configured in
-				<code>config/quality.json</code>.
-			</td>
-		</tr>
-		<tr>
-			<td>
-				<code>pnpm run format:c</code>
-			</td>
-			<td>Format the C sources with the configured clang-format style.</td>
-		</tr>
-		<tr>
-			<td>
-				<code>pnpm run format:c:check</code>
-			</td>
-			<td>Check C formatting without changing files.</td>
-		</tr>
-		<tr>
-			<td>
-				<code>pnpm run docs:doxygen</code>
-			</td>
-			<td>
-				Generate the Doxygen reference under <code>dist/doxygen/</code>.
-			</td>
-		</tr>
-	</tbody>
-</table>
+| Command                          | Effect                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile` | Install exactly the dependencies recorded by the lockfile.             |
+| `pnpm run docs`                  | Start the local Docs development server; stop it with `Ctrl+C`.        |
+| `pnpm run build`                 | Build static pages under `dist/docs/`.                                 |
+| `pnpm run quality`               | Run the repository quality checks configured in `config/quality.json`. |
+| `pnpm run format:c`              | Format the C sources with the configured clang-format style.           |
+| `pnpm run format:c:check`        | Check C formatting without changing files.                             |
+| `pnpm run docs:doxygen`          | Generate the Doxygen reference under `dist/doxygen/`.                  |
 
 Assignment requirements and the separately authored business and technical proposals are grouped under [Assessment](/assessment/).

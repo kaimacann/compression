@@ -1,6 +1,6 @@
 ---
 title: Business specification
-description: Business case, proposed scope, stakeholders, and acceptance considerations for an asset-processing service.
+description: Business case, scope, stakeholders, and acceptance criteria for the service.
 ---
 
 > **Proposal status.** This authored business specification is a proposal for review. It is separate from the official assignment requirements and the current repository guide.
@@ -160,15 +160,7 @@ Response fields: `contractVersion`, `requestId`, `assetId`, `status`, source/out
 Example envelope:
 
 ```json
-{
-	"contractVersion": "v1",
-	"requestId": "request-id",
-	"keyId": "review-key-2026-01",
-	"algorithm": "AEAD-approved-by-tutor",
-	"nonce": "base64...",
-	"ciphertext": "base64...",
-	"tag": "base64..."
-}
+{ "contractVersion": "v1", "requestId": "request-id", "keyId": "review-key-2026-01", "algorithm": "AEAD-approved-by-tutor", "nonce": "base64...", "ciphertext": "base64...", "tag": "base64..." }
 ```
 
 Security boundary: use a vetted cryptography library if allowed, TLS in transit, and environment-injected secrets or an approved secret manager. Do not claim production security from custom encryption. Document the threat model and key lifecycle in the report.
