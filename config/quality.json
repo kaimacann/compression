@@ -33,9 +33,9 @@
 		"github": true
 	},
 	"tools": {
-		"eslint": "config/node_modules/.bin/eslint",
-		"knip": "config/node_modules/.bin/knip",
-		"prettier": "config/node_modules/.bin/prettier"
+		"eslint": "node_modules/.bin/eslint",
+		"knip": "node_modules/.bin/knip",
+		"prettier": "node_modules/.bin/prettier"
 	},
 	"qualityCommands": [
 		{
