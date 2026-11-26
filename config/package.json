@@ -43,7 +43,8 @@
 	},
 	"pnpm": {
 		"overrides": {
-			"postcss-selector-parser": "6.1.5"
+			"postcss-selector-parser": "6.1.5",
+			"astro": "7.4.7"
 		}
 	}
 }
