@@ -19,8 +19,8 @@ importers:
         specifier: ^9.39.5
         version: 9.39.5
       '@terra-symposium/docs':
-        specifier: ^0.4.36
-        version: 0.4.36(@astrojs/markdown-satteri@0.4.7)(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(esbuild@0.28.2)(jiti@1.21.7)(xstate@5.33.3)
+        specifier: ^0.4.37
+        version: 0.4.37(@astrojs/markdown-satteri@0.4.7)(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(esbuild@0.28.2)(jiti@1.21.7)(xstate@5.33.3)
       '@terra-symposium/hygiene':
         specifier: ^2.5.9
         version: 2.5.9(eslint@9.39.5(jiti@1.21.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -2097,8 +2097,8 @@ packages:
       react: '>=18'
       react-dom: '>=18'
 
-  '@terra-symposium/docs@0.4.36':
-    resolution: {integrity: sha512-ComdsqxYiDobpIRpAdac9RJpDbshHKRmuju0q/baNdufAAge3tEAE5atCSNswdXs7TjhNdI5yLIe78UHPnN2uw==}
+  '@terra-symposium/docs@0.4.37':
+    resolution: {integrity: sha512-iQXnzVW4fvsvb1Nbk5Dbp9KC/yPpvcp5CT/r5YvLlD8HMjO+glWRbZfXuRGv0H/Z6NSWezTleORoHpid3mjs0w==}
     engines: {node: '>=24.12.0'}
     hasBin: true
 
@@ -2117,8 +2117,8 @@ packages:
     engines: {node: '>=24.12.0'}
     hasBin: true
 
-  '@terra-symposium/styling@0.1.39':
-    resolution: {integrity: sha512-GtV0INRB3AhIZJt9U6ZDgVEic0UPSCAfyHr5b8Vj4izGK0OFAxVUQCaKQk3+3gXH/xpnC+dcgbCpUw1xhBHFxQ==}
+  '@terra-symposium/styling@0.2.0':
+    resolution: {integrity: sha512-K2q/YpO9+JtaXhjHgTQ4pgbuV8OZfHbuz7ivXSCJffi97PzqkU3Tbyy8EkiGZ8eRMAnL+UtynkUYgx+86sH0Kw==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
@@ -6940,7 +6940,7 @@ snapshots:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
-  '@terra-symposium/docs@0.4.36(@astrojs/markdown-satteri@0.4.7)(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(esbuild@0.28.2)(jiti@1.21.7)(xstate@5.33.3)':
+  '@terra-symposium/docs@0.4.37(@astrojs/markdown-satteri@0.4.7)(@types/node@26.6.6)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(esbuild@0.28.2)(jiti@1.21.7)(xstate@5.33.3)':
     dependencies:
       '@astrojs/markdown-remark': 7.3.5
       '@astrojs/mdx': 8.1.2(@astrojs/markdown-remark@7.3.5)(@astrojs/markdown-satteri@0.4.7)(astro@7.4.7(@astrojs/markdown-remark@7.3.5)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@1.21.7)(yaml@2.9.1))
@@ -6958,7 +6958,7 @@ snapshots:
       '@portabletext/editor': 7.9.0(@types/react@19.3.0)(react@19.3.1)
       '@radix-ui/react-popover': 1.3.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@terra-symposium/boundaries': 0.2.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@terra-symposium/styling': 0.1.39(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(yaml@2.9.1)
+      '@terra-symposium/styling': 0.2.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(yaml@2.9.1)
       '@uiw/codemirror-theme-github': 4.25.12(@codemirror/language@6.13.1)(@codemirror/state@6.7.6)(@codemirror/view@6.43.15)
       '@xstate/react': 6.1.0(@types/react@19.3.0)(react@19.3.1)(xstate@5.33.3)
       '@xyflow/react': 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -7031,7 +7031,7 @@ snapshots:
     dependencies:
       yaml: 2.9.1
 
-  '@terra-symposium/styling@0.1.39(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(yaml@2.9.1)':
+  '@terra-symposium/styling@0.2.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(yaml@2.9.1)':
     dependencies:
       '@carbon/icons-react': 11.90.0(react@19.3.1)
       '@headlessui/tailwindcss': 0.2.2(tailwindcss@3.4.19(yaml@2.9.1))
